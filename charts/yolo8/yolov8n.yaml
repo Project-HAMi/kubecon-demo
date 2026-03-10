@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolov8n-detection
+  labels:
+    app: yolov8n
+    chart: yolov8n
+spec:
+  replicas: 20
+  selector:
+    matchLabels:
+      app: yolov8n
+  template:
+    metadata:
+      labels:
+        app: yolov8n
+    spec:
+      schedulerName: hami-scheduler
+      containers:
+      - name: ultralytics
+        image: ultralytics/ultralytics:latest
+        command:
+          - python
+          - -c
+          - |
+            import cv2
+            import numpy as np
+            
+            # Initialize YOLOv8n model
+            from ultralytics import YOLO
+            model = YOLO('yolov8n.pt')
+            
+            # Create a dummy image for testing
+            # In production, this would load actual video/image sources
+            img = np.random.randint(0, 255, (640, 480, 3), dtype=np.uint8)
+            
+            results = model(img)
+            
+            print("YOLOv8n detection test successful!")
+            print(f"Results: {len(results)} detections")
+            
+            while True:
+              pass
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            nvidia.com/gpumem: 1024
+        livenessProbe:
+          exec:
+            command:
+              - python
+              - -c
+              - print("Alive")
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+              - python
+              - -c
+              - print("Ready")
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yolov8n-service
+  labels:
+    app: yolov8n
+spec:
+  selector:
+    app: yolov8n
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP

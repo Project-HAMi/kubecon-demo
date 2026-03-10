@@ -1,0 +1,11 @@
+releases:
+  - name: hami-core
+    namespace: kube-system
+    chart: hami-charts/hami
+    version: "2.8.0"
+    set:
+      - name: scheduler.kubeScheduler.imageTag
+        value: "v1.28.0"
+    labels:
+      component: hami-core
+      tag: hami

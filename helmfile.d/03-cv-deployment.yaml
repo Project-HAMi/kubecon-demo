@@ -1,0 +1,8 @@
+# Helmfile for Computer Vision Workload
+releases:
+  - name: yolov8n-detection
+    namespace: default
+    chart: ../charts/yolo8
+    labels:
+      component: cv-workload
+      tag: yolov8n

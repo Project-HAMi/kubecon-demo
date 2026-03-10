@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-spread
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app-name: node-spread
+  template:
+    metadata:
+      annotations:
+        hami.io/node-scheduler-policy: spread
+        hami.io/gpu-scheduler-policy: spread
+      labels:
+        app-name: node-spread
+    spec:
+      containers:
+      - command:
+        - vllm
+        - serve
+        - Qwen/Qwen3-4B
+        - --max-model-len=2048
+        - --dtype=auto
+        image: vllm/vllm-openai:latest
+        name: main
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            nvidia.com/gpucores: "30"
+            nvidia.com/gpumem: "15000"

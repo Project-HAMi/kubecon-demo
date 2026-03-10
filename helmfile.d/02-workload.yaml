@@ -1,0 +1,14 @@
+releases:
+  - name: spread
+    namespace: default
+    chart: ../charts/spread
+    labels:
+      component: deployment
+      tag: spread
+
+  - name: mig
+    namespace: default
+    chart: ../charts/mig
+    labels:
+      component: pod
+      tag: mig
