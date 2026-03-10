@@ -10,20 +10,20 @@ spec:
   template:
     metadata:
       annotations:
-        hami.io/node-scheduler-policy: spread
-        hami.io/gpu-scheduler-policy: spread
+        hami.io/node-scheduler-policy: binpack
+        hami.io/gpu-scheduler-policy: binpack
       labels:
         app-name: node-spread
     spec:
       containers:
-      - command:
-        - vllm
-        - serve
-        - Qwen/Qwen3-4B
-        - --max-model-len=2048
-        - --dtype=auto
+      - name: main
         image: vllm/vllm-openai:latest
-        name: main
+        command:
+          - vllm
+          - serve
+          - Qwen/Qwen3-4B
+          - --max-model-len=2048
+          - --dtype=auto
         resources:
           limits:
             nvidia.com/gpu: "1"

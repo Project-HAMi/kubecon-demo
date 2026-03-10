@@ -19,16 +19,23 @@ spec:
     spec:
       schedulerName: hami-scheduler
       containers:
-      - name: vllm-qwen7b
-        image: vllm/vllm-openai:latest
-        command: ["vllm", "serve", "Qwen/Qwen3-7B-Instruct", 
-                 "--max-model-len=8192", 
-                 "--gpu-memory-utilization=0.9",
-                 "--host", "0.0.0.0"]
-        resources:
-          limits:
-            nvidia.com/gpu: "1"
-            nvidia.com/gpumem: "25000"
+        - name: vllm-qwen7b
+          image: vllm/vllm-openai:latest
+          command:
+            [
+              "vllm",
+              "serve",
+              "Qwen/Qwen3-8B",
+              "--max-model-len=8192",
+              "--gpu-memory-utilization=0.9",
+              "--host",
+              "0.0.0.0",
+            ]
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              nvidia.com/gpucores: "30"
+              nvidia.com/gpumem: "25000"
 ---
 apiVersion: v1
 kind: Service
