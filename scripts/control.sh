@@ -8,6 +8,24 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && (pwd -W 2> /dev
 cd "$SCRIPT_DIR/.."
 
 
+test_qwen7b() {
+    echo "=== Starting Qwen 7B Test Workflow ==="
+    echo "Step 1: Waiting for deployment readiness..."
+    kubectl wait --for=condition=ready pod -l app=qwen7b --timeout=300s
+    
+    echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
+    POD_NAME=$(kubectl get pods -l app=qwen7b -o jsonpath='{.items[0].metadata.name}')
+    kubectl exec -it "$POD_NAME" -- nvidia-smi
+    
+    echo "Step 3: Testing chat API with streaming output..."
+    python3 test_vllm.py
+    
+    echo "Step 4: Checking GPU resources on host node..."
+    kubectl get nodes -o name | xargs -I {} kubectl node-shell {} -- nvidia-smi
+    
+    echo "=== Qwen 7B Test Workflow Complete ==="
+}
+
 POSITIONAL_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -24,11 +42,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -v TEST_QWEN7B ]]; then
-  echo "test"
+  test_qwen7b
 else
     echo -n "\
 Please specify the right commandline option:
--e/--environment {environment name} : specify environment(dev/staging/prod)
+-q7/--test-qwen7b : test qwen7b
 "
 fi
 
