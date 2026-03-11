@@ -16,7 +16,7 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 import numpy as np
 import pandas as pd
@@ -99,7 +99,7 @@ class SeabornGPUVisualizer:
 
         return nodes
 
-    def _get_pods(self) -> List[Dict[str, str]]:
+    def _get_pods(self) -> List[Dict[str, Any]]:
         """Get pods from cluster."""
         pods = []
         output = self._run_command("kubectl get pods -A -o json")
@@ -126,7 +126,7 @@ class SeabornGPUVisualizer:
 
         return pods
 
-    def _classify_pod_type(self, pod: Dict[str, str]) -> str:
+    def _classify_pod_type(self, pod: Dict[str, Any]) -> str:
         """Classify pod type based on name, labels, and containers."""
         name = pod["metadata"]["name"].lower()
         namespace = pod["metadata"]["namespace"].lower()
@@ -156,35 +156,18 @@ class SeabornGPUVisualizer:
 
         return "other"
 
-    def _get_gpu_count_from_pod(self, pod: Dict[str, str]) -> int:
+    def _get_gpu_count_from_pod(self, pod: Dict[str, Any]) -> int:
         """Get GPU count from pod annotations."""
         annotations = pod["metadata"].get("annotations", {})
         return int(annotations.get("nvidia.com/gpu.count", "0"))
 
-    def _get_gpu_memory_from_pod(self, pod: Dict[str, str]) -> float:
-        """Get GPU memory using nvidia-smi command."""
-        if pod["spec"].get("node_name") and pod["metadata"].get("name"):
-            try:
-                # Run nvidia-smi in the pod to get detailed memory info
-                command = f"kubectl exec -it {pod['metadata']['name']} -- nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits"
-                output = self._run_command(command)
+    def _get_gpu_memory_from_pod(self, pod: Dict[str, Any]) -> float:
+        """Get GPU memory from pod annotations."""
+        annotations = pod["metadata"].get("annotations", {})
+        gpumem = annotations.get("nvidia.com/gpumem", "0")
+        return float(gpumem) / 1024  # Convert MB to GB
 
-                if output:
-                    # Parse memory usage in MB: format "used,total"
-                    parts = output.split(",")
-                    if len(parts) == 2:
-                        memory_used_mb = float(parts[0].strip())
-                        memory_total_mb = float(parts[1].strip())
-                        return memory_used_mb / 1024  # Convert to GB
-
-            except Exception as e:
-                logger.warning(
-                    f"Failed to get GPU memory for pod {pod['metadata']['name']}: {e}"
-                )
-
-        return 0.0
-
-    def _filter_gpu_pods(self) -> List[Dict[str, str]]:
+    def _filter_gpu_pods(self) -> List[Dict[str, Any]]:
         """Filter pods that use GPUs."""
         gpu_pods = []
 
@@ -209,7 +192,7 @@ class SeabornGPUVisualizer:
         node_data = []
         for node in self.nodes:
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
-            total_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
+            total_vram_used = sum(p.get("gpu_memory_gb", 0) for p in node_pods)
             total_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
             node_data.append(
@@ -232,7 +215,7 @@ class SeabornGPUVisualizer:
                 "VRAM Utilization",
                 "Pod Count",
                 "VRAM Capacity",
-                "Resource Overview",
+                "VRAM Utilization by Workload Type",
             ),
             specs=[
                 [{"secondary_y": False}, {"secondary_y": False}],
@@ -281,27 +264,52 @@ class SeabornGPUVisualizer:
             col=1,
         )
 
-        # Resource Overview
-        for node in nodes:
-            node_data_local = [d for d in node_data if d["node"] == node][0]
-            fig.add_trace(
-                go.Bar(
-                    x=[node],
-                    y=[node_data_local["pod_count"]],
-                    name="Pod Count",
-                    marker_color="purple",
-                ),
-                row=2,
-                col=2,
-            )
+        # Stacked Bar Chart for VRAM Utilization by Workload Type
+        node_workload_vram = self._aggregate_vram_by_workload()
 
-        # Update layout
-        fig.update_layout(
-            title_text=f"{CLUSTER_NAME} - Interactive GPU Dashboard",
-            showlegend=True,
-            height=800,
-            hovermode="x unified",
+        # Add unused capacity (green base)
+        unused_capacity = []
+        for node in nodes:
+            total_used = sum(node_workload_vram[node].values())
+            unused_capacity.append(GPU_MEMORY_GB - total_used)
+
+        fig.add_trace(
+            go.Bar(
+                x=nodes,
+                y=unused_capacity,
+                name="Unused Capacity",
+                marker_color="lightgreen",
+                text=[f"{uc:.1f}GB" for uc in unused_capacity],
+                textposition="inside",
+                showlegend=False,
+            ),
+            row=2,
+            col=2,
         )
+
+        # Add workload segments
+        for workload_type in POD_COLORS.keys():
+            workload_data = []
+            for node in nodes:
+                workload_data.append(node_workload_vram[node].get(workload_type, 0.0))
+
+            if any(workload_data):  # Only add if there's data
+                fig.add_trace(
+                    go.Bar(
+                        x=nodes,
+                        y=workload_data,
+                        name=workload_type.title(),
+                        marker_color=POD_COLORS[workload_type],
+                        text=[f"{wd:.1f}GB" if wd > 0 else "" for wd in workload_data],
+                        textposition="inside",
+                        showlegend=True,
+                    ),
+                    row=2,
+                    col=2,
+                )
+
+        # Update layout to set barmode for all subplots
+        fig.update_layout(barmode="stack")
 
         # Update x-axis labels
         fig.update_xaxes(title_text="Node", tickangle=45)
@@ -329,6 +337,76 @@ class SeabornGPUVisualizer:
 
         return results
 
+    def _aggregate_vram_by_workload(self) -> Dict[str, Dict[str, float]]:
+        """Aggregate VRAM by node and workload type."""
+        node_workload_vram = {}
+
+        for node in self.nodes:
+            node_name = node["name"]
+            node_pods = [p for p in self.gpu_pods if p["node_name"] == node_name]
+
+            # Initialize with all workload types
+            workload_vram = {pod_type: 0.0 for pod_type in POD_COLORS.keys()}
+
+            # Sum VRAM per workload type
+            for pod in node_pods:
+                workload_vram[pod["pod_type"]] += pod["gpu_memory_gb"]
+
+            node_workload_vram[node_name] = workload_vram
+
+        return node_workload_vram
+
+    def create_stacked_bar_chart(self, node_workload_vram: Dict) -> go.Figure:
+        """Create stacked bar chart showing VRAM utilization per node."""
+        fig = go.Figure()
+
+        nodes = list(node_workload_vram.keys())
+
+        # Add unused capacity (green base)
+        unused_capacity = []
+        for node in nodes:
+            total_used = sum(node_workload_vram[node].values())
+            unused_capacity.append(GPU_MEMORY_GB - total_used)
+
+        fig.add_trace(
+            go.Bar(
+                x=nodes,
+                y=unused_capacity,
+                name="Unused Capacity",
+                marker_color="lightgreen",
+                text=[f"{uc:.1f}GB" for uc in unused_capacity],
+                textposition="inside",
+            )
+        )
+
+        # Add workload segments
+        for workload_type in POD_COLORS.keys():
+            workload_data = []
+            for node in nodes:
+                workload_data.append(node_workload_vram[node].get(workload_type, 0.0))
+
+            if any(workload_data):  # Only add if there's data
+                fig.add_trace(
+                    go.Bar(
+                        x=nodes,
+                        y=workload_data,
+                        name=workload_type.title(),
+                        marker_color=POD_COLORS[workload_type],
+                        text=[f"{wd:.1f}GB" if wd > 0 else "" for wd in workload_data],
+                        textposition="inside",
+                    )
+                )
+
+        fig.update_layout(
+            title="VRAM Utilization by Workload Type",
+            barmode="stack",
+            yaxis_title="VRAM (GB)",
+            xaxis_title="Node",
+            height=500,
+        )
+
+        return fig
+
     def _generate_summary_report(self, output_dir: Path) -> None:
         """Generate a text summary of the cluster state."""
         logger.info("Generating summary report...")
@@ -336,7 +414,7 @@ class SeabornGPUVisualizer:
         # Calculate summary statistics
         total_nodes = len(self.nodes)
         total_pods = len(self.gpu_pods)
-        total_vram_used = sum(p["gpu_memory_gb"] for p in self.gpu_pods)
+        total_vram_used = sum(p.get("gpu_memory_gb", 0) for p in self.gpu_pods)
         total_vram_capacity = total_nodes * TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
         # Pod type breakdown
@@ -368,7 +446,7 @@ Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
 
         for node in self.nodes:
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
-            node_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
+            node_vram_used = sum(p.get("gpu_memory_gb", 0) for p in node_pods)
             node_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
             report_content += f"""
