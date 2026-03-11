@@ -3,12 +3,11 @@
 Simplified GPU VRAM Visualization System for HAMi vLLM Deployment
 
 Uses nvidia-smi commands to get actual VRAM information from GPU pods.
-Generates seaborn cluster maps showing pod placement and VRAM usage.
+Generates interactive HTML dashboard only.
 
 Usage:
     python3 gpu_visualization.py
     python3 gpu_visualization.py --output-dir ./output
-    python3 gpu_visualization.py --interactive-only
 """
 
 import argparse
@@ -19,7 +18,6 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -203,320 +201,6 @@ class SeabornGPUVisualizer:
 
         return gpu_pods
 
-    def create_cluster_visualization(self, output_dir: Path) -> str:
-        """Create cluster-wide visualization using seaborn."""
-        logger.info("Creating cluster visualization...")
-
-        # Prepare data
-        cluster_data = []
-        for node in self.nodes:
-            node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
-            total_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
-            total_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
-
-            cluster_data.append(
-                {
-                    "node": node["name"],
-                    "vram_used_gb": total_vram_used,
-                    "vram_available_gb": total_vram_capacity,
-                    "vram_usage_percent": (total_vram_used / total_vram_capacity * 100)
-                    if total_vram_capacity > 0
-                    else 0,
-                    "pod_count": len(node_pods),
-                    "pod_type": ", ".join(set([p["pod_type"] for p in node_pods])),
-                }
-            )
-
-        df = pd.DataFrame(cluster_data)
-
-        if df.empty:
-            logger.warning("No cluster data found")
-            return ""
-
-        # Create comprehensive visualization
-        plt.figure(figsize=(20, 12))
-        sns.set_style("whitegrid")
-
-        # 1. VRAM Usage by Node
-        plt.subplot(2, 3, 1)
-        sns.barplot(data=df, x="node", y="vram_usage_percent", palette="viridis")
-        plt.title(f"{CLUSTER_NAME} - VRAM Usage per Node")
-        plt.ylabel("VRAM Usage (%)")
-        plt.xlabel("Node")
-        plt.xticks(rotation=45)
-        for i, v in enumerate(df["vram_usage_percent"]):
-            plt.text(i, v + 1, f"{v:.1f}%", ha="center", va="bottom")
-
-        # 2. Pod Count by Node
-        plt.subplot(2, 3, 2)
-        sns.barplot(data=df, x="node", y="pod_count", palette="plasma")
-        plt.title("GPU Pods per Node")
-        plt.xlabel("Node")
-        plt.ylabel("Pod Count")
-        plt.xticks(rotation=45)
-
-        # 3. VRAM Used vs Available
-        plt.subplot(2, 3, 3)
-        df_melted = df.melt(
-            id_vars=["node"],
-            value_vars=["vram_used_gb", "vram_available_gb"],
-            var_name="VRAM Type",
-            value_name="VRAM (GB)",
-        )
-        sns.barplot(
-            data=df_melted,
-            x="node",
-            y="VRAM (GB)",
-            hue="VRAM Type",
-            palette=["coral", "lightblue"],
-        )
-        plt.title("VRAM Used vs Available")
-        plt.xlabel("Node")
-        plt.ylabel("VRAM (GB)")
-        plt.xticks(rotation=45)
-
-        # 4. VRAM Heatmap
-        plt.subplot(2, 3, 4)
-        heatmap_data = df.set_index("node")[["vram_used_gb", "vram_available_gb"]].T
-        sns.heatmap(
-            heatmap_data,
-            annot=True,
-            fmt=".1f",
-            cmap="RdYlBu_r",
-            cbar_kws={"label": "VRAM (GB)"},
-        )
-        plt.title("VRAM Heatmap")
-        plt.xlabel("Node")
-        plt.ylabel("")
-
-        # 5. Pod Type Distribution
-        plt.subplot(2, 3, 5)
-        pod_type_counts = {}
-        for pod in self.gpu_pods:
-            pod_type_counts[pod["pod_type"]] = (
-                pod_type_counts.get(pod["pod_type"], 0) + 1
-            )
-
-        pod_df = pd.DataFrame(list(pod_type_counts.items()), columns=["Type", "Count"])
-        sns.barplot(
-            data=pod_df,
-            x="Count",
-            y="Type",
-            palette=[POD_COLORS.get(t, "gray") for t in pod_df["Type"]],
-        )
-        plt.title("Pod Type Distribution")
-        plt.xlabel("Count")
-        plt.ylabel("Pod Type")
-
-        # 6. Memory Pressure
-        plt.subplot(2, 3, 6)
-        pressure_data = []
-        for _, row in df.iterrows():
-            if row["vram_usage_percent"] > 80:
-                pressure = "High"
-            elif row["vram_usage_percent"] > 60:
-                pressure = "Medium"
-            else:
-                pressure = "Low"
-            pressure_data.append({"node": row["node"], "pressure": pressure})
-
-        pressure_df = pd.DataFrame(pressure_data)
-        pressure_counts = pressure_df["pressure"].value_counts()
-        plt.pie(
-            pressure_counts.values,
-            labels=pressure_counts.index,
-            autopct="%1.1f%%",
-            colors=["red", "orange", "green"],
-        )
-        plt.title("Memory Pressure Distribution")
-
-        plt.tight_layout()
-        plt.suptitle(
-            f"{CLUSTER_NAME} - Comprehensive GPU Overview", fontsize=16, y=0.98
-        )
-
-        # Save the plot
-        output_path = output_dir / "cluster_visualization.png"
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-        logger.info(f"Cluster visualization saved to {output_path}")
-        return str(output_path)
-
-    def create_pod_placement_heatmap(self, output_dir: Path) -> str:
-        """Create pod placement heatmap using seaborn."""
-        logger.info("Creating pod placement heatmap...")
-
-        # Create node-pod matrix
-        placement_data = []
-        for node in self.nodes:
-            node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
-
-            for pod in node_pods:
-                placement_data.append(
-                    {
-                        "node": node["name"],
-                        "pod_name": pod["name"],
-                        "pod_type": pod["pod_type"],
-                        "gpu_memory_gb": pod["gpu_memory_gb"],
-                        "gpu_usage_percent": (
-                            pod["gpu_memory_gb"] / GPU_MEMORY_GB * 100
-                        )
-                        if GPU_MEMORY_GB > 0
-                        else 0,
-                    }
-                )
-
-        if not placement_data:
-            logger.warning("No pod placement data found")
-            return ""
-
-        df = pd.DataFrame(placement_data)
-
-        # Create pivot table for heatmap
-        heatmap_df = df.pivot_table(
-            index="node",
-            columns="pod_type",
-            values="gpu_usage_percent",
-            aggfunc="sum",
-            fill_value=0,
-        )
-
-        # Create the heatmap
-        plt.figure(figsize=(12, 8))
-        sns.heatmap(
-            heatmap_df,
-            annot=True,
-            fmt=".1f",
-            cmap="YlOrRd",
-            cbar_kws={"label": "GPU Usage (%)"},
-        )
-        plt.title(f"{CLUSTER_NAME} - Pod Placement Heatmap")
-        plt.xlabel("Pod Type")
-        plt.ylabel("Node")
-        plt.tight_layout()
-
-        # Save the plot
-        output_path = output_dir / "pod_placement_heatmap.png"
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-        logger.info(f"Pod placement heatmap saved to {output_path}")
-        return str(output_path)
-
-    def create_resource_utilization_chart(self, output_dir: Path) -> str:
-        """Create resource utilization chart using seaborn."""
-        logger.info("Creating resource utilization chart...")
-
-        # Prepare data
-        utilization_data = []
-        for node in self.nodes:
-            node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
-            total_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
-            total_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
-
-            utilization_data.append(
-                {
-                    "node": node["name"],
-                    "vram_used_gb": total_vram_used,
-                    "vram_capacity_gb": total_vram_capacity,
-                    "vram_utilization": (total_vram_used / total_vram_capacity * 100)
-                    if total_vram_capacity > 0
-                    else 0,
-                    "pod_count": len(node_pods),
-                    "pod_density": len(node_pods) / TOTAL_GPUS_PER_NODE,
-                }
-            )
-
-        df = pd.DataFrame(utilization_data)
-
-        # Create the chart
-        plt.figure(figsize=(15, 10))
-
-        # 1. VRAM Utilization by Node
-        plt.subplot(2, 2, 1)
-        sns.barplot(data=df, x="node", y="vram_utilization", palette="coolwarm")
-        plt.title("VRAM Utilization by Node")
-        plt.xlabel("Node")
-        plt.ylabel("Utilization (%)")
-        plt.xticks(rotation=45)
-        for i, v in enumerate(df["vram_utilization"]):
-            plt.text(i, v + 1, f"{v:.1f}%", ha="center", va="bottom")
-
-        # 2. VRAM Capacity vs Usage
-        plt.subplot(2, 2, 2)
-        df_melted = df.melt(
-            id_vars=["node"],
-            value_vars=["vram_used_gb", "vram_capacity_gb"],
-            var_name="VRAM Type",
-            value_name="VRAM (GB)",
-        )
-        sns.barplot(
-            data=df_melted,
-            x="node",
-            y="VRAM (GB)",
-            hue="VRAM Type",
-            palette=["coral", "lightblue"],
-        )
-        plt.title("VRAM Capacity vs Usage")
-        plt.xlabel("Node")
-        plt.ylabel("VRAM (GB)")
-        plt.xticks(rotation=45)
-
-        # 3. Pod Density
-        plt.subplot(2, 2, 3)
-        sns.barplot(data=df, x="node", y="pod_density", palette="viridis")
-        plt.title("Pod Density per GPU")
-        plt.xlabel("Node")
-        plt.ylabel("Pods per GPU")
-        plt.xticks(rotation=45)
-
-        # 4. Resource Overview
-        plt.subplot(2, 2, 4)
-        resource_data = []
-        for _, row in df.iterrows():
-            resource_data.extend(
-                [
-                    {
-                        "node": row["node"],
-                        "resource": "VRAM Used",
-                        "value": row["vram_used_gb"],
-                    },
-                    {
-                        "node": row["node"],
-                        "resource": "VRAM Capacity",
-                        "value": row["vram_capacity_gb"],
-                    },
-                    {
-                        "node": row["node"],
-                        "resource": "Pod Count",
-                        "value": row["pod_count"],
-                    },
-                ]
-            )
-
-        resource_df = pd.DataFrame(resource_data)
-        sns.barplot(
-            data=resource_df, x="node", y="value", hue="resource", palette="Set2"
-        )
-        plt.title("Resource Overview")
-        plt.xlabel("Node")
-        plt.ylabel("Value")
-        plt.xticks(rotation=45)
-
-        plt.tight_layout()
-        plt.suptitle(
-            f"{CLUSTER_NAME} - Resource Utilization Analysis", fontsize=16, y=0.98
-        )
-
-        # Save the plot
-        output_path = output_dir / "resource_utilization.png"
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-        logger.info(f"Resource utilization chart saved to {output_path}")
-        return str(output_path)
-
     def create_interactive_dashboard(self, output_dir: Path) -> str:
         """Create interactive dashboard using Plotly."""
         logger.info("Creating interactive dashboard...")
@@ -632,22 +316,12 @@ class SeabornGPUVisualizer:
     def generate_all_visualizations(
         self, output_dir: Path, interactive_only: bool = False
     ) -> Dict[str, str]:
-        """Generate all visualizations."""
+        """Generate interactive dashboard only."""
         output_dir.mkdir(parents=True, exist_ok=True)
 
         results = {}
 
-        if not interactive_only:
-            results["cluster_visualization"] = self.create_cluster_visualization(
-                output_dir
-            )
-            results["pod_placement_heatmap"] = self.create_pod_placement_heatmap(
-                output_dir
-            )
-            results["resource_utilization"] = self.create_resource_utilization_chart(
-                output_dir
-            )
-
+        # Only generate interactive dashboard
         results["interactive_dashboard"] = self.create_interactive_dashboard(output_dir)
 
         # Generate summary report
@@ -732,17 +406,12 @@ Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
 
 def main():
     """Main function to run the GPU visualization."""
-    parser = argparse.ArgumentParser(description="Generate GPU cluster visualizations")
+    parser = argparse.ArgumentParser(description="Generate interactive GPU dashboard")
     parser.add_argument(
         "--output-dir",
         type=str,
         default="./output",
-        help="Output directory for visualizations",
-    )
-    parser.add_argument(
-        "--interactive-only",
-        action="store_true",
-        help="Generate only interactive dashboard",
+        help="Output directory for dashboard",
     )
 
     args = parser.parse_args()
@@ -754,11 +423,9 @@ def main():
 
     try:
         visualizer = SeabornGPUVisualizer()
-        results = visualizer.generate_all_visualizations(
-            output_dir, args.interactive_only
-        )
+        results = visualizer.generate_all_visualizations(output_dir)
 
-        print("\nGenerated visualizations:")
+        print("\nGenerated dashboard:")
         for viz_type, path in results.items():
             if path:
                 print(f"  {viz_type}: {path}")
@@ -767,11 +434,11 @@ def main():
 
         if not any(results.values()):
             print(
-                "Warning: No visualizations generated - check cluster status and permissions"
+                "Warning: No dashboard generated - check cluster status and permissions"
             )
 
     except Exception as e:
-        logger.error(f"Error generating visualizations: {e}")
+        logger.error(f"Error generating dashboard: {e}")
         raise
 
 
