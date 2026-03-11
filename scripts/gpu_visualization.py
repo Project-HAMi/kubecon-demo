@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import logging
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -119,13 +120,17 @@ class SeabornGPUVisualizer:
                     if all_running:
                         status = "Running"
 
-                # Remove pod hash/version from name
+                # Remove pod hash/version from name using regex
                 pod_name = pod["metadata"]["name"]
-                clean_name = pod_name.rsplit("-", 1)[0] if "-" in pod_name else pod_name
+                # Remove hash pattern (e.g., -7fdf758cf8, -769648db94, -5¢56989dd6)
+                clean_name = re.sub(r"-[a-z0-9¢]{10}-[a-z0-9¢]{6}$", "", pod_name)
+
+                print(f"DEBUG: Converted {clean_name}")
 
                 pods.append(
                     {
                         "name": pod_name,
+                        "czlean_name": clean_name,
                         "namespace": pod["metadata"]["namespace"],
                         "node_name": pod["spec"]["nodeName"],
                         "status": status,

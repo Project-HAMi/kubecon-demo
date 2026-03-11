@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: qwen7b-service
+  name: qwen8b
   labels:
-    app: qwen7b
+    app: qwen8b
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: qwen7b
+      app: qwen8b
   template:
     metadata:
       labels:
-        app: qwen7b
+        app: qwen8b
       annotations:
         hami.io/node-scheduler-policy: binpack
         hami.io/gpu-scheduler-policy: binpack
     spec:
       schedulerName: hami-scheduler
       containers:
-        - name: vllm-qwen7b
+        - name: vllm-qwen8b
           image: vllm/vllm-openai:latest
           command:
             [
@@ -40,10 +40,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: qwen7b-service
+  name: qwen8b
 spec:
   selector:
-    app: qwen7b
+    app: qwen8b
   ports:
     - protocol: TCP
       port: 8000

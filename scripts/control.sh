@@ -8,23 +8,22 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && (pwd -W 2> /dev
 cd "$SCRIPT_DIR/.."
 
 
-test_qwen7b() {
-    echo "=== Starting Qwen 7B Test Workflow ==="
+test_qwen8b() {
+    echo "=== Starting Qwen 8B Test Workflow ==="
     
-    # Check if user wants port-forward
     if [[ "${USE_PORT_FORWARD:-false}" == "true" ]]; then
         echo "Step 0: Starting kubectl port-forward..."
-        kubectl port-forward svc/qwen7b-service 8000:8000 &
+        kubectl port-forward svc/qwen8b-service 8000:8000 &
         PORT_FORWARD_PID=$!
         sleep 3  # Give port-forward time to establish
         echo "✓ Port-forward started (PID: $PORT_FORWARD_PID)"
     fi
     
     echo "Step 1: Waiting for deployment readiness..."
-    kubectl wait --for=condition=ready pod -l app=qwen7b --timeout=300s
+    kubectl wait --for=condition=ready pod -l app=qwen8b --timeout=300s
     
     echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
-    POD_NAME=$(kubectl get pods -l app=qwen7b -o jsonpath='{.items[0].metadata.name}')
+    POD_NAME=$(kubectl get pods -l app=qwen8b -o jsonpath='{.items[0].metadata.name}')
     kubectl exec -it "$POD_NAME" -- nvidia-smi
     
     echo "Step 3: Testing chat API with streaming output..."
@@ -39,23 +38,14 @@ test_qwen7b() {
         echo "✓ Port-forward cleaned up"
     fi
     
-    echo "=== Qwen 7B Test Workflow Complete ==="
+    echo "=== Qwen 8B Test Workflow Complete ==="
 }
 
 visualize() {
     echo "=== Starting GPU Cluster Visualization ==="
-    
-    # Check if python3 with required packages is available
-    if ! command -v python3 &> /dev/null; then
-        echo "ERROR: python3 not found"
-        exit 1
-    fi
-    
-    
-    # Generate visualizations
     echo "Generating GPU cluster visualizations..."
     python3 scripts/gpu_visualization.py --output-dir ./output
-    
+
     echo "=== Visualization Complete ==="
     echo "Output saved to ./output/"
     echo "Generated files:"
@@ -71,8 +61,8 @@ POSITIONAL_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    -q7|--test-qwen7b)
-      TEST_QWEN7B=YES
+    -q8|--test-qwen8b)
+      TEST_QWEN8B=YES
       shift # past argument
       ;;
     -pf|--port-forward)
@@ -90,20 +80,20 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -v TEST_QWEN7B ]]; then
-  test_qwen7b
+if [[ -v TEST_QWEN8B ]]; then
+  test_qwen8b
 elif [[ -v VISUALIZE ]]; then
   visualize
 else
     echo -n "\
 Please specify the right commandline option:
--q7/--test-qwen7b : test qwen7b
+-q8/--test-qwen8b : test qwen8b
 -pf/--port-forward : use port-forward for vLLM API access
 -v/--visualize    : generate GPU cluster visualizations
 
 Example usage:
-  ./control.sh -q7                            # Test Qwen 7B without port-forward
-  ./control.sh -q7 -pf                       # Test Qwen 7B with port-forward
+  ./control.sh -q8                            # Test Qwen 8B without port-forward
+  ./control.sh -q8 -pf                       # Test Qwen 8B with port-forward
   ./control.sh -v                            # Generate visualizations
 "
 fi
