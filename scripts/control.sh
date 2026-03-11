@@ -42,6 +42,31 @@ test_qwen7b() {
     echo "=== Qwen 7B Test Workflow Complete ==="
 }
 
+visualize() {
+    echo "=== Starting GPU Cluster Visualization ==="
+    
+    # Check if python3 with required packages is available
+    if ! command -v python3 &> /dev/null; then
+        echo "ERROR: python3 not found"
+        exit 1
+    fi
+    
+    
+    # Generate visualizations
+    echo "Generating GPU cluster visualizations..."
+    python3 scripts/gpu_visualization.py --output-dir ./visualization_output
+    
+    echo "=== Visualization Complete ==="
+    echo "Output saved to ./visualization_output/"
+    echo "Generated files:"
+    echo "  - cluster_heatmap.png: Cluster-wide VRAM usage heatmap"
+    echo "  - pod_placement_map.png: Detailed pod placement on individual GPUs"
+    echo "  - pod_type_distribution.png: Pod type distribution charts"
+    echo "  - vram_utilization.png: VRAM utilization analysis"
+    echo "  - interactive_dashboard.html: Interactive Plotly dashboard"
+    echo "  - visualization_report.txt: Text summary report"
+}
+
 POSITIONAL_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -54,6 +79,10 @@ while [[ $# -gt 0 ]]; do
       USE_PORT_FORWARD=YES
       shift # past argument
       ;;
+    -v|--visualize)
+      VISUALIZE=YES
+      shift # past argument
+      ;;
     *)
       POSITIONAL_ARGS+=("$1") # save positional arg
       shift # past argument
@@ -63,11 +92,19 @@ done
 
 if [[ -v TEST_QWEN7B ]]; then
   test_qwen7b
+elif [[ -v VISUALIZE ]]; then
+  visualize
 else
     echo -n "\
 Please specify the right commandline option:
 -q7/--test-qwen7b : test qwen7b
 -pf/--port-forward : use port-forward for vLLM API access
+-v/--visualize    : generate GPU cluster visualizations
+
+Example usage:
+  ./control.sh -q7                            # Test Qwen 7B without port-forward
+  ./control.sh -q7 -pf                       # Test Qwen 7B with port-forward
+  ./control.sh -v                            # Generate visualizations
 "
 fi
 
