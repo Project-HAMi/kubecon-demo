@@ -110,17 +110,29 @@ class SeabornGPUVisualizer:
         try:
             data = json.loads(output)
             for pod in data["items"]:
-                pods.append(
-                    {
-                        "name": pod["metadata"]["name"],
-                        "namespace": pod["metadata"]["namespace"],
-                        "node_name": pod["spec"].get("node_name", "Unknown"),
-                        "status": pod["status"]["phase"],
-                        "pod_type": self._classify_pod_type(pod),
-                        "gpu_memory_gb": self._get_gpu_memory_from_pod(pod),
-                        "gpu_count": self._get_gpu_count_from_pod(pod),
-                    }
+                # Debug: Print pod info for troubleshooting
+                print(
+                    f"DEBUG: Pod {pod['metadata']['name']} on node {pod['spec']['nodeName']}"
                 )
+
+                pod_info = {
+                    "name": pod["metadata"]["name"],
+                    "namespace": pod["metadata"]["namespace"],
+                    "node_name": pod["spec"][
+                        "nodeName"
+                    ],  # Use nodeName instead of node_name
+                    "status": pod["status"]["phase"],
+                    "pod_type": self._classify_pod_type(pod),
+                    "gpu_memory_gb": self._get_gpu_memory_from_pod(pod),
+                    "gpu_count": self._get_gpu_count_from_pod(pod),
+                }
+
+                # Debug: Print GPU info
+                print(
+                    f"DEBUG: GPU count: {pod_info['gpu_count']}, GPU memory: {pod_info['gpu_memory_gb']}GB"
+                )
+
+                pods.append(pod_info)
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {e}")
 
@@ -157,14 +169,25 @@ class SeabornGPUVisualizer:
         return "other"
 
     def _get_gpu_count_from_pod(self, pod: Dict[str, Any]) -> int:
-        """Get GPU count from pod annotations."""
-        annotations = pod["metadata"].get("annotations", {})
-        return int(annotations.get("nvidia.com/gpu.count", "0"))
+        """Get GPU count from pod resources limits."""
+        resources = (
+            pod.get("spec", {})
+            .get("containers", [{}])[0]
+            .get("resources", {})
+            .get("limits", {})
+        )
+        gpu_count = resources.get("nvidia.com/gpu", "0")
+        return int(gpu_count)
 
     def _get_gpu_memory_from_pod(self, pod: Dict[str, Any]) -> float:
-        """Get GPU memory from pod annotations."""
-        annotations = pod["metadata"].get("annotations", {})
-        gpumem = annotations.get("nvidia.com/gpumem", "0")
+        """Get GPU memory from pod resources limits."""
+        resources = (
+            pod.get("spec", {})
+            .get("containers", [{}])[0]
+            .get("resources", {})
+            .get("limits", {})
+        )
+        gpumem = resources.get("nvidia.com/gpumem", "0")
         return float(gpumem) / 1024  # Convert MB to GB
 
     def _filter_gpu_pods(self) -> List[Dict[str, Any]]:
