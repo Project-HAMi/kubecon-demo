@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simplified GPU VRAM Visualization System for HAMi vLLM Deployment
+GPU VRAM Visualization for HAMi vLLM Deployment
 
 Uses nvidia-smi commands to get actual VRAM information from GPU pods.
 Generates interactive HTML dashboard only.
@@ -16,27 +16,20 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List
 
-import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 import plotly.subplots as sps
-import seaborn as sns
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
 CLUSTER_NAME = "HAMi Cluster"
 TOTAL_GPUS_PER_NODE = 1  # 1x A100 per node
 GPU_MEMORY_GB = 80  # A100 80GB
 
-# Color scheme for pod types
 POD_COLORS = {
     "qwen": "#1f77b4",  # Blue
     "yolo": "#ff7f0e",  # Orange
@@ -131,7 +124,6 @@ class SeabornGPUVisualizer:
         name = pod["metadata"]["name"].lower()
         namespace = pod["metadata"]["namespace"].lower()
 
-        # Check for specific deployments
         if "qwen" in name or namespace == "qwen":
             return "qwen"
         elif "yolo" in name or "cv" in namespace:
@@ -143,7 +135,6 @@ class SeabornGPUVisualizer:
         elif "spread" in name:
             return "spread"
 
-        # Check container images
         if pod["spec"]["containers"]:
             for container in pod["spec"]["containers"]:
                 image = container["image"].lower()
@@ -176,14 +167,28 @@ class SeabornGPUVisualizer:
             .get("limits", {})
         )
         gpumem = resources.get("nvidia.com/gpumem", "0")
-        return float(gpumem) / 1024  # Convert MB to GB
+        
+        if gpumem.endswith('k'):
+            return float(gpumem[:-1]) / 1024 / 1024
+        elif gpumem.endswith('m'):
+            return float(gpumem[:-1]) / 1024
+        elif gpumem.endswith("m"):
+            result = float(gpumem[:-1]) / 1024
+            print(f"DEBUG: Converted {gpumem} to {result}GB")
+            return result
+        else:
+            # Most GPU pods in HAMi specify memory in bytes, but the values are
+            # actually very large (e.g., 25600 bytes = 25GB), so this seems wrong.
+            # Let's assume these values are actually in MB for realistic GPU allocations.
+            result = float(gpumem) / 1024
+            print(f"DEBUG: Assuming {gpumem} is in MB, converted to {result}GB")
+            return result
 
     def _filter_gpu_pods(self) -> List[Dict[str, Any]]:
         """Filter pods that use GPUs."""
         gpu_pods = []
 
         for pod in self.pods:
-            # Include if pod has GPU annotations or is classified as GPU type
             if pod["gpu_count"] > 0 or pod["pod_type"] in [
                 "qwen",
                 "yolo",
@@ -199,7 +204,6 @@ class SeabornGPUVisualizer:
         """Create interactive dashboard using Plotly."""
         logger.info("Creating interactive dashboard...")
 
-        # Prepare data
         node_data = []
         for node in self.nodes:
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
@@ -218,7 +222,6 @@ class SeabornGPUVisualizer:
                 }
             )
 
-        # Create single subplot for stacked bar chart
         fig = sps.make_subplots(
             rows=1,
             cols=1,
@@ -226,11 +229,9 @@ class SeabornGPUVisualizer:
             specs=[[{"secondary_y": False}]],
         )
 
-        # Get nodes and prepare pod data
         nodes = [data["node"] for data in node_data]
         node_pod_data = self._prepare_pod_data_for_chart()
 
-        # Add unused capacity (green base)
         unused_capacity = []
         for node in nodes:
             node_pods = node_pod_data.get(node, [])
@@ -251,13 +252,11 @@ class SeabornGPUVisualizer:
             col=1,
         )
 
-        # Add individual pod segments
         all_pod_names = set()
         for node_pods in node_pod_data.values():
             for pod in node_pods:
                 all_pod_names.add(pod["name"])
 
-        # Sort pods by name for consistent ordering
         sorted_pod_names = sorted(all_pod_names)
 
         for pod_name in sorted_pod_names:
@@ -287,15 +286,12 @@ class SeabornGPUVisualizer:
                     col=1,
                 )
 
-        # Update layout to set barmode
         fig.update_layout(
             barmode="stack", yaxis_title="VRAM (GB)", xaxis_title="Node", height=600
         )
 
-        # Update x-axis labels
         fig.update_xaxes(title_text="Node", tickangle=45)
 
-        # Save as HTML
         output_path = output_dir / "interactive_dashboard.html"
         fig.write_html(str(output_path))
 
@@ -310,10 +306,8 @@ class SeabornGPUVisualizer:
 
         results = {}
 
-        # Only generate interactive dashboard
         results["interactive_dashboard"] = self.create_interactive_dashboard(output_dir)
 
-        # Generate summary report
         self._generate_summary_report(output_dir)
 
         return results
@@ -326,7 +320,6 @@ class SeabornGPUVisualizer:
             node_name = node["name"]
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node_name]
 
-            # Create individual data entry for each pod
             pod_data = []
             for pod in node_pods:
                 pod_data.append(
@@ -346,25 +339,21 @@ class SeabornGPUVisualizer:
         """Generate a text summary of the cluster state."""
         logger.info("Generating summary report...")
 
-        # Calculate summary statistics
         total_nodes = len(self.nodes)
         total_pods = len(self.gpu_pods)
         total_vram_used = sum(p.get("gpu_memory_gb", 0) for p in self.gpu_pods)
         total_vram_capacity = total_nodes * TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
-        # Pod type breakdown
         pod_type_counts = {}
         for pod in self.gpu_pods:
             pod_type = pod["pod_type"]
             pod_type_counts[pod_type] = pod_type_counts.get(pod_type, 0) + 1
 
-        # Node breakdown
         node_pod_counts = {}
         for pod in self.gpu_pods:
             node_name = pod["node_name"]
             node_pod_counts[node_name] = node_pod_counts.get(node_name, 0) + 1
 
-        # Generate report
         report_content = f"""
 # HAMi Cluster GPU Visualization Report
 Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -401,7 +390,7 @@ Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
         for pod_type, count in pod_type_counts.items():
             report_content += f"- **{pod_type.title()}**: {count} pods\n"
 
-        report_content += f"""
+        report_content += """
 
 ## Pod Distribution by Node
 """
@@ -409,7 +398,6 @@ Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
         for node_name, count in node_pod_counts.items():
             report_content += f"- **{node_name}**: {count} pods\n"
 
-        # Save report
         output_path = output_dir / "visualization_report.txt"
         with open(output_path, "w") as f:
             f.write(report_content)

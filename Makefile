@@ -10,7 +10,7 @@ deploy-cv-workload:
 
 deploy-qwen8b:
 	@echo "=== Deploying Qwen 8B Workload ==="
-	@helmfile -f helmfile.d/04-qwen8b.yaml apply
+	@helmfile -f helmfile.d/04-qwen.yaml apply
 
 verify-deployment:
 	@echo "=== Verifying Deployments ==="
