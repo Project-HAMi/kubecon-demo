@@ -168,8 +168,10 @@ class SeabornGPUVisualizer:
         )
         gpumem = resources.get("nvidia.com/gpumem", "0")
         
-        if gpumem.endswith('k'):
-            return float(gpumem[:-1]) / 1024 / 1024
+        if gpumem.endswith('k'): # since gpumem is always in MB 'k' is the same as 'G'
+            return float(gpumem[:-1])
+        elif gpumem.endswith('G'):
+            return float(gpumem[:-1])
         elif gpumem.endswith('m'):
             return float(gpumem[:-1]) / 1024
         elif gpumem.endswith("m"):
