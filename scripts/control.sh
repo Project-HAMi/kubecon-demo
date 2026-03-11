@@ -10,18 +10,10 @@ cd "$SCRIPT_DIR/.."
 
 test_qwen8b() {
     echo "=== Starting Qwen 8B Test Workflow ==="
-    
-    if [[ "${USE_PORT_FORWARD:-false}" == "true" ]]; then
-        echo "Step 0: Starting kubectl port-forward..."
-        kubectl port-forward svc/qwen8b-service 8000:8000 &
-        PORT_FORWARD_PID=$!
-        sleep 3  # Give port-forward time to establish
-        echo "✓ Port-forward started (PID: $PORT_FORWARD_PID)"
-    fi
-    
+
     echo "Step 1: Waiting for deployment readiness..."
     kubectl wait --for=condition=ready pod -l app=qwen8b --timeout=300s
-    
+
     echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
     POD_NAME=$(kubectl get pods -l app=qwen8b -o jsonpath='{.items[0].metadata.name}')
     kubectl exec -it "$POD_NAME" -- nvidia-smi
