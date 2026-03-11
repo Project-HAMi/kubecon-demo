@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
 """
-GPU VRAM Visualization System for HAMi vLLM Deployment
+Simplified GPU VRAM Visualization System for HAMi vLLM Deployment
 
-Generates 4 seaborn cluster maps showing pod placement across 3 nodes with 80GB A100 GPUs each.
-Light theme styling, static PNG and interactive HTML output.
+Uses nvidia-smi commands to get actual VRAM information from GPU pods.
+Generates seaborn cluster maps showing pod placement and VRAM usage.
 
 Usage:
     python3 gpu_visualization.py
+    python3 gpu_visualization.py --output-dir ./output
     python3 gpu_visualization.py --interactive-only
 """
 
 import argparse
+import json
 import logging
+import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+import plotly.subplots as sps
 import seaborn as sns
-from kubernetes import client, config
-from plotly.subplots import make_subplots
 
 # Configure logging
 logging.basicConfig(
@@ -35,7 +37,6 @@ logger = logging.getLogger(__name__)
 CLUSTER_NAME = "HAMi Cluster"
 TOTAL_GPUS_PER_NODE = 1  # 1x A100 per node
 GPU_MEMORY_GB = 80  # A100 80GB
-MAX_PODS_PER_GPU = 1  # Conservative for vLLM workloads
 
 # Color scheme for pod types
 POD_COLORS = {
@@ -48,121 +49,89 @@ POD_COLORS = {
 }
 
 
-class GPUClusterVisualizer:
-    """Visualizes GPU cluster state with pod placement and VRAM usage."""
+class SeabornGPUVisualizer:
+    """Simplified GPU visualizer using seaborn and nvidia-smi for VRAM info."""
 
-    def __init__(self, kubeconfig: Optional[str] = None):
-        """Initialize with Kubernetes configuration."""
-        try:
-            # Try to load in-cluster config first, then fall back to kubeconfig
-            config.load_incluster_config()
-            self.api_client = client.CoreV1Api()
-        except config.ConfigException:
-            if kubeconfig:
-                config.load_kube_config(config_file=kubeconfig)
-            else:
-                config.load_kube_config()
-            self.api_client = client.CoreV1Api()
-
+    def __init__(self):
+        """Initialize visualizer."""
         self.nodes = self._get_nodes()
         self.pods = self._get_pods()
         self.gpu_pods = self._filter_gpu_pods()
 
-    def _get_nodes(self) -> List[Dict[str, Any]]:
-        """Get all nodes in the cluster."""
+    def _run_command(self, command: str) -> str:
+        """Run shell command and return output."""
         try:
-            nodes = []
-            api_response = self.api_client.list_node()
-
-            for node in api_response.items:
-                node_info = {
-                    "name": node.metadata.name,
-                    "status": "Ready"
-                    if any(
-                        condition.type == "Ready" and condition.status == "True"
-                        for condition in node.status.conditions
-                    )
-                    else "Not Ready",
-                    "gpu_count": self._get_gpu_count(node),
-                    "memory_total_gb": self._get_memory_total_gb(node),
-                    "memory_available_gb": self._get_memory_available_gb(node),
-                    "labels": node.metadata.labels or {},
-                }
-                nodes.append(node_info)
-
-            return nodes
-
+            result = subprocess.run(
+                command, shell=True, capture_output=True, text=True, timeout=30
+            )
+            return result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Command timeout: {command}")
+            return ""
         except Exception as e:
-            logger.error(f"Error getting nodes: {e}")
+            logger.error(f"Command failed: {command}, error: {e}")
+            return ""
+
+    def _get_nodes(self) -> List[Dict[str, str]]:
+        """Get nodes from cluster."""
+        nodes = []
+        output = self._run_command("kubectl get nodes -o json")
+
+        if not output:
             return []
 
-    def _get_pods(self) -> List[Dict[str, Any]]:
-        """Get all pods in the cluster."""
         try:
-            pods = []
-            api_response = self.api_client.list_pod_for_all_namespaces()
-
-            for pod in api_response.items:
-                pod_info = {
-                    "name": pod.metadata.name,
-                    "namespace": pod.metadata.namespace,
-                    "node_name": pod.spec.node_name
-                    if pod.spec.node_name
-                    else "Unknown",
-                    "status": pod.status.phase,
-                    "gpu_memory_gb": 0,
-                    "gpu_count": 0,
-                    "pod_type": self._classify_pod_type(pod),
-                    "container_resources": self._get_container_resources(pod),
-                }
-
-                # Get GPU information from annotations or labels
-                if pod.metadata.annotations:
-                    if "nvidia.com/gpu.memory" in pod.metadata.annotations:
-                        pod_info["gpu_memory_gb"] = float(
-                            pod.metadata.annotations["nvidia.com/gpu.memory"]
+            data = json.loads(output)
+            for node in data["items"]:
+                nodes.append(
+                    {
+                        "name": node["metadata"]["name"],
+                        "status": "Ready"
+                        if any(
+                            condition["type"] == "Ready"
+                            and condition["status"] == "True"
+                            for condition in node["status"]["conditions"]
                         )
+                        else "Not Ready",
+                        "labels": node["metadata"]["labels"] or {},
+                    }
+                )
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {e}")
 
-                    if "nvidia.com/gpu.count" in pod.metadata.annotations:
-                        pod_info["gpu_count"] = int(
-                            pod.metadata.annotations["nvidia.com/gpu.count"]
-                        )
+        return nodes
 
-                pods.append(pod_info)
+    def _get_pods(self) -> List[Dict[str, str]]:
+        """Get pods from cluster."""
+        pods = []
+        output = self._run_command("kubectl get pods -A -o json")
 
-            return pods
-
-        except Exception as e:
-            logger.error(f"Error getting pods: {e}")
+        if not output:
             return []
 
-    def _get_gpu_count(self, node: Any) -> int:
-        """Get GPU count for a node from labels."""
-        labels = node.metadata.labels or {}
-        return int(labels.get("nvidia.com/gpu.count", "0"))
+        try:
+            data = json.loads(output)
+            for pod in data["items"]:
+                pods.append(
+                    {
+                        "name": pod["metadata"]["name"],
+                        "namespace": pod["metadata"]["namespace"],
+                        "node_name": pod["spec"].get("node_name", "Unknown"),
+                        "status": pod["status"]["phase"],
+                        "pod_type": self._classify_pod_type(pod),
+                        "gpu_memory_gb": self._get_gpu_memory_from_pod(pod),
+                        "gpu_count": self._get_gpu_count_from_pod(pod),
+                    }
+                )
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {e}")
 
-    def _get_memory_total_gb(self, node: Any) -> int:
-        """Get total memory for a node in GB."""
-        if node.status.capacity:
-            memory_bytes = int(
-                node.status.capacity.get("memory", "0").replace("Ki", "")
-            )
-            return int(memory_bytes / (1024 * 1024 * 1024))
-        return 0
+        return pods
 
-    def _get_memory_available_gb(self, node: Any) -> int:
-        """Get available memory for a node in GB."""
-        if node.status.allocatable:
-            memory_bytes = int(
-                node.status.allocatable.get("memory", "0").replace("Ki", "")
-            )
-            return int(memory_bytes / (1024 * 1024 * 1024))
-        return 0
-
-    def _classify_pod_type(self, pod: Any) -> str:
+    def _classify_pod_type(self, pod: Dict[str, str]) -> str:
         """Classify pod type based on name, labels, and containers."""
-        name = pod.metadata.name.lower()
-        namespace = pod.metadata.namespace.lower()
+        name = pod["metadata"]["name"].lower()
+        namespace = pod["metadata"]["namespace"].lower()
 
         # Check for specific deployments
         if "qwen" in name or namespace == "qwen":
@@ -177,9 +146,9 @@ class GPUClusterVisualizer:
             return "spread"
 
         # Check container images
-        if pod.spec.containers:
-            for container in pod.spec.containers:
-                image = container.image.lower()
+        if pod["spec"]["containers"]:
+            for container in pod["spec"]["containers"]:
+                image = container["image"].lower()
                 if "qwen" in image:
                     return "qwen"
                 elif "yolo" in image:
@@ -189,21 +158,35 @@ class GPUClusterVisualizer:
 
         return "other"
 
-    def _get_container_resources(self, pod: Any) -> Dict[str, Any]:
-        """Extract container resource requirements."""
-        resources = {}
+    def _get_gpu_count_from_pod(self, pod: Dict[str, str]) -> int:
+        """Get GPU count from pod annotations."""
+        annotations = pod["metadata"].get("annotations", {})
+        return int(annotations.get("nvidia.com/gpu.count", "0"))
 
-        if pod.spec.containers:
-            for container in pod.spec.containers:
-                if container.resources and container.resources.requests:
-                    resources[container.name] = {
-                        "memory": container.resources.requests.get("memory"),
-                        "cpu": container.resources.requests.get("cpu"),
-                    }
+    def _get_gpu_memory_from_pod(self, pod: Dict[str, str]) -> float:
+        """Get GPU memory using nvidia-smi command."""
+        if pod["spec"].get("node_name") and pod["metadata"].get("name"):
+            try:
+                # Run nvidia-smi in the pod to get detailed memory info
+                command = f"kubectl exec -it {pod['metadata']['name']} -- nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits"
+                output = self._run_command(command)
 
-        return resources
+                if output:
+                    # Parse memory usage in MB: format "used,total"
+                    parts = output.split(",")
+                    if len(parts) == 2:
+                        memory_used_mb = float(parts[0].strip())
+                        memory_total_mb = float(parts[1].strip())
+                        return memory_used_mb / 1024  # Convert to GB
 
-    def _filter_gpu_pods(self) -> List[Dict[str, Any]]:
+            except Exception as e:
+                logger.warning(
+                    f"Failed to get GPU memory for pod {pod['metadata']['name']}: {e}"
+                )
+
+        return 0.0
+
+    def _filter_gpu_pods(self) -> List[Dict[str, str]]:
         """Filter pods that use GPUs."""
         gpu_pods = []
 
@@ -220,437 +203,352 @@ class GPUClusterVisualizer:
 
         return gpu_pods
 
-    def create_cluster_heatmap(self, output_dir: Path) -> str:
-        """Create cluster-wide heatmap showing VRAM usage per node."""
-        logger.info("Creating cluster heatmap...")
+    def create_cluster_visualization(self, output_dir: Path) -> str:
+        """Create cluster-wide visualization using seaborn."""
+        logger.info("Creating cluster visualization...")
 
         # Prepare data
-        node_data = []
+        cluster_data = []
         for node in self.nodes:
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
             total_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
-            total_vram_available = node["gpu_count"] * GPU_MEMORY_GB
+            total_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
-            node_data.append(
+            cluster_data.append(
                 {
                     "node": node["name"],
                     "vram_used_gb": total_vram_used,
-                    "vram_available_gb": total_vram_available,
-                    "vram_usage_percent": (total_vram_used / total_vram_available * 100)
-                    if total_vram_available > 0
+                    "vram_available_gb": total_vram_capacity,
+                    "vram_usage_percent": (total_vram_used / total_vram_capacity * 100)
+                    if total_vram_capacity > 0
                     else 0,
                     "pod_count": len(node_pods),
-                    "gpu_count": node["gpu_count"],
+                    "pod_type": ", ".join(set([p["pod_type"] for p in node_pods])),
                 }
             )
 
-        df = pd.DataFrame(node_data)
+        df = pd.DataFrame(cluster_data)
 
         if df.empty:
-            logger.warning("No node data found for heatmap")
+            logger.warning("No cluster data found")
             return ""
 
-        # Create the plot
-        plt.figure(figsize=(12, 8))
+        # Create comprehensive visualization
+        plt.figure(figsize=(20, 12))
         sns.set_style("whitegrid")
 
-        # VRAM usage heatmap
-        plt.subplot(2, 2, 1)
-        vram_data = df.set_index("node")["vram_usage_percent"].to_frame()
-        sns.heatmap(
-            vram_data.T,
-            annot=True,
-            cmap="RdYlBu_r",
-            fmt=".1f",
-            cbar_kws={"label": "VRAM Usage (%)"},
-        )
+        # 1. VRAM Usage by Node
+        plt.subplot(2, 3, 1)
+        sns.barplot(data=df, x="node", y="vram_usage_percent", palette="viridis")
         plt.title(f"{CLUSTER_NAME} - VRAM Usage per Node")
-        plt.xlabel("")
+        plt.ylabel("VRAM Usage (%)")
+        plt.xlabel("Node")
+        plt.xticks(rotation=45)
+        for i, v in enumerate(df["vram_usage_percent"]):
+            plt.text(i, v + 1, f"{v:.1f}%", ha="center", va="bottom")
 
-        # Pod count bar chart
-        plt.subplot(2, 2, 2)
-        sns.barplot(data=df, x="node", y="pod_count", palette="viridis")
+        # 2. Pod Count by Node
+        plt.subplot(2, 3, 2)
+        sns.barplot(data=df, x="node", y="pod_count", palette="plasma")
         plt.title("GPU Pods per Node")
         plt.xlabel("Node")
         plt.ylabel("Pod Count")
         plt.xticks(rotation=45)
 
-        # VRAM comparison
-        plt.subplot(2, 2, 3)
-        df_sorted = df.sort_values("vram_available_gb")
-        x = np.arange(len(df_sorted))
-        width = 0.35
-
-        plt.bar(
-            x - width / 2, df_sorted["vram_used_gb"], width, label="Used", color="coral"
+        # 3. VRAM Used vs Available
+        plt.subplot(2, 3, 3)
+        df_melted = df.melt(
+            id_vars=["node"],
+            value_vars=["vram_used_gb", "vram_available_gb"],
+            var_name="VRAM Type",
+            value_name="VRAM (GB)",
         )
-        plt.bar(
-            x + width / 2,
-            df_sorted["vram_available_gb"],
-            width,
-            label="Available",
-            color="lightblue",
+        sns.barplot(
+            data=df_melted,
+            x="node",
+            y="VRAM (GB)",
+            hue="VRAM Type",
+            palette=["coral", "lightblue"],
         )
+        plt.title("VRAM Used vs Available")
         plt.xlabel("Node")
         plt.ylabel("VRAM (GB)")
-        plt.title("VRAM Used vs Available")
-        plt.xticks(x, df_sorted["node"], rotation=45)
-        plt.legend()
-
-        # Node status overview
-        plt.subplot(2, 2, 4)
-        status_counts = df[["node", "gpu_count"]].set_index("node")["gpu_count"]
-        status_counts.plot(
-            kind="pie",
-            autopct="%1.1f%%",
-            startangle=90,
-            colors=plt.cm.Set3(np.linspace(0, 1, len(df))),
-        )
-        plt.title("GPU Distribution Across Nodes")
-        plt.ylabel("")
-
-        plt.tight_layout()
-        plt.suptitle(f"{CLUSTER_NAME} - GPU Cluster Overview", fontsize=16, y=0.98)
-
-        # Save the plot
-        output_path = output_dir / "cluster_heatmap.png"
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-        logger.info(f"Cluster heatmap saved to {output_path}")
-        return str(output_path)
-
-    def create_pod_placement_map(self, output_dir: Path) -> str:
-        """Create detailed pod placement map showing individual GPUs."""
-        logger.info("Creating pod placement map...")
-
-        # Create figure with subplots for each node
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-        fig.suptitle(f"{CLUSTER_NAME} - Pod Placement on GPUs", fontsize=16)
-
-        for idx, node in enumerate(self.nodes):
-            if node["gpu_count"] == 0:
-                continue
-
-            ax = axes[idx]
-            ax.set_title(f"Node {node['name']}\n{node['gpu_count']} GPU(s)")
-
-            # Create GPU representation
-            for gpu_idx in range(node["gpu_count"]):
-                # Draw GPU rectangle
-                gpu_rect = patches.Rectangle(
-                    (0.1, 0.1),
-                    0.8,
-                    0.8,
-                    linewidth=2,
-                    edgecolor="black",
-                    facecolor="lightgray",
-                    alpha=0.7,
-                )
-                ax.add_patch(gpu_rect)
-
-                # Add GPU label
-                ax.text(
-                    0.5,
-                    0.95,
-                    f"GPU {gpu_idx + 1}",
-                    ha="center",
-                    va="top",
-                    fontsize=10,
-                    fontweight="bold",
-                )
-
-                # Get pods on this GPU
-                node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
-                gpu_pods = [
-                    p
-                    for p in node_pods
-                    if p["gpu_count"] > 0 and p["gpu_memory_gb"] > 0
-                ]
-
-                # Calculate VRAM usage
-                vram_used = sum(p["gpu_memory_gb"] for p in gpu_pods)
-                vram_percent = vram_used / GPU_MEMORY_GB * 100
-
-                # Update GPU color based on usage
-                if vram_percent > 0:
-                    color_intensity = min(vram_percent / 100, 1.0)
-                    gpu_rect.set_facecolor(
-                        (1.0, 1.0 - color_intensity, 1.0 - color_intensity)
-                    )
-
-                # Add VRAM info
-                ax.text(
-                    0.5,
-                    0.5,
-                    f"{vram_used:.1f}GB\n{vram_percent:.0f}%",
-                    ha="center",
-                    va="center",
-                    fontsize=9,
-                    fontweight="bold",
-                )
-
-                # List pods below GPU
-                pod_names = [p["name"][:15] for p in gpu_pods[:3]]  # Show first 3 pods
-                if len(gpu_pods) > 3:
-                    pod_names.append(f"+{len(gpu_pods) - 3} more")
-
-                pod_text = "\n".join(pod_names)
-                ax.text(
-                    0.5,
-                    0.05,
-                    pod_text,
-                    ha="center",
-                    va="bottom",
-                    fontsize=8,
-                    rotation=0,
-                )
-
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
-            ax.set_aspect("equal")
-            ax.axis("off")
-
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.9)
-
-        # Save the plot
-        output_path = output_dir / "pod_placement_map.png"
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-        logger.info(f"Pod placement map saved to {output_path}")
-        return str(output_path)
-
-    def create_pod_type_distribution(self, output_dir: Path) -> str:
-        """Create visualization showing pod type distribution."""
-        logger.info("Creating pod type distribution chart...")
-
-        # Count pods by type
-        pod_type_counts = {}
-        for pod in self.gpu_pods:
-            pod_type = pod["pod_type"]
-            pod_type_counts[pod_type] = pod_type_counts.get(pod_type, 0) + 1
-
-        if not pod_type_counts:
-            logger.warning("No GPU pods found for distribution")
-            return ""
-
-        # Create the plot
-        plt.figure(figsize=(12, 8))
-
-        # Pie chart
-        plt.subplot(2, 2, 1)
-        colors = [
-            POD_COLORS.get(pod_type, "#gray") for pod_type in pod_type_counts.keys()
-        ]
-        plt.pie(
-            pod_type_counts.values(),
-            labels=pod_type_counts.keys(),
-            autopct="%1.1f%%",
-            startangle=90,
-            colors=colors,
-        )
-        plt.title("Pod Type Distribution")
-
-        # Bar chart
-        plt.subplot(2, 2, 2)
-        df_types = pd.DataFrame(
-            list(pod_type_counts.items()), columns=["Type", "Count"]
-        )
-        sns.barplot(data=df_types, x="Count", y="Type", palette=colors)
-        plt.title("Pod Count by Type")
-        plt.xlabel("Count")
-
-        # VRAM usage by type
-        plt.subplot(2, 2, 3)
-        vram_by_type = {}
-        for pod in self.gpu_pods:
-            pod_type = pod["pod_type"]
-            vram_by_type[pod_type] = (
-                vram_by_type.get(pod_type, 0) + pod["gpu_memory_gb"]
-            )
-
-        df_vram = pd.DataFrame(list(vram_by_type.items()), columns=["Type", "VRAM_GB"])
-        sns.barplot(data=df_vram, x="VRAM_GB", y="Type", palette=colors)
-        plt.title("VRAM Usage by Pod Type")
-        plt.xlabel("VRAM (GB)")
-
-        # Node breakdown
-        plt.subplot(2, 2, 4)
-        node_breakdown = {}
-        for pod in self.gpu_pods:
-            node_name = pod["node_name"]
-            pod_type = pod["pod_type"]
-            if node_name not in node_breakdown:
-                node_breakdown[node_name] = {}
-            node_breakdown[node_name][pod_type] = (
-                node_breakdown[node_name].get(pod_type, 0) + 1
-            )
-
-        df_nodes = pd.DataFrame.from_dict(node_breakdown, orient="index").fillna(0)
-        df_nodes.plot(kind="bar", stacked=True, ax=plt.gca())
-        plt.title("Pod Breakdown by Node")
-        plt.xlabel("Node")
-        plt.ylabel("Pod Count")
         plt.xticks(rotation=45)
 
+        # 4. VRAM Heatmap
+        plt.subplot(2, 3, 4)
+        heatmap_data = df.set_index("node")[["vram_used_gb", "vram_available_gb"]].T
+        sns.heatmap(
+            heatmap_data,
+            annot=True,
+            fmt=".1f",
+            cmap="RdYlBu_r",
+            cbar_kws={"label": "VRAM (GB)"},
+        )
+        plt.title("VRAM Heatmap")
+        plt.xlabel("Node")
+        plt.ylabel("")
+
+        # 5. Pod Type Distribution
+        plt.subplot(2, 3, 5)
+        pod_type_counts = {}
+        for pod in self.gpu_pods:
+            pod_type_counts[pod["pod_type"]] = (
+                pod_type_counts.get(pod["pod_type"], 0) + 1
+            )
+
+        pod_df = pd.DataFrame(list(pod_type_counts.items()), columns=["Type", "Count"])
+        sns.barplot(
+            data=pod_df,
+            x="Count",
+            y="Type",
+            palette=[POD_COLORS.get(t, "gray") for t in pod_df["Type"]],
+        )
+        plt.title("Pod Type Distribution")
+        plt.xlabel("Count")
+        plt.ylabel("Pod Type")
+
+        # 6. Memory Pressure
+        plt.subplot(2, 3, 6)
+        pressure_data = []
+        for _, row in df.iterrows():
+            if row["vram_usage_percent"] > 80:
+                pressure = "High"
+            elif row["vram_usage_percent"] > 60:
+                pressure = "Medium"
+            else:
+                pressure = "Low"
+            pressure_data.append({"node": row["node"], "pressure": pressure})
+
+        pressure_df = pd.DataFrame(pressure_data)
+        pressure_counts = pressure_df["pressure"].value_counts()
+        plt.pie(
+            pressure_counts.values,
+            labels=pressure_counts.index,
+            autopct="%1.1f%%",
+            colors=["red", "orange", "green"],
+        )
+        plt.title("Memory Pressure Distribution")
+
         plt.tight_layout()
+        plt.suptitle(
+            f"{CLUSTER_NAME} - Comprehensive GPU Overview", fontsize=16, y=0.98
+        )
 
         # Save the plot
-        output_path = output_dir / "pod_type_distribution.png"
+        output_path = output_dir / "cluster_visualization.png"
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
         plt.close()
 
-        logger.info(f"Pod type distribution saved to {output_path}")
+        logger.info(f"Cluster visualization saved to {output_path}")
         return str(output_path)
 
-    def create_vram_utilization_chart(self, output_dir: Path) -> str:
-        """Create VRAM utilization chart over time (mock data for now)."""
-        logger.info("Creating VRAM utilization chart...")
+    def create_pod_placement_heatmap(self, output_dir: Path) -> str:
+        """Create pod placement heatmap using seaborn."""
+        logger.info("Creating pod placement heatmap...")
 
-        # Calculate current VRAM usage
-        vram_data = []
+        # Create node-pod matrix
+        placement_data = []
+        for node in self.nodes:
+            node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
+
+            for pod in node_pods:
+                placement_data.append(
+                    {
+                        "node": node["name"],
+                        "pod_name": pod["name"],
+                        "pod_type": pod["pod_type"],
+                        "gpu_memory_gb": pod["gpu_memory_gb"],
+                        "gpu_usage_percent": (
+                            pod["gpu_memory_gb"] / GPU_MEMORY_GB * 100
+                        )
+                        if GPU_MEMORY_GB > 0
+                        else 0,
+                    }
+                )
+
+        if not placement_data:
+            logger.warning("No pod placement data found")
+            return ""
+
+        df = pd.DataFrame(placement_data)
+
+        # Create pivot table for heatmap
+        heatmap_df = df.pivot_table(
+            index="node",
+            columns="pod_type",
+            values="gpu_usage_percent",
+            aggfunc="sum",
+            fill_value=0,
+        )
+
+        # Create the heatmap
+        plt.figure(figsize=(12, 8))
+        sns.heatmap(
+            heatmap_df,
+            annot=True,
+            fmt=".1f",
+            cmap="YlOrRd",
+            cbar_kws={"label": "GPU Usage (%)"},
+        )
+        plt.title(f"{CLUSTER_NAME} - Pod Placement Heatmap")
+        plt.xlabel("Pod Type")
+        plt.ylabel("Node")
+        plt.tight_layout()
+
+        # Save the plot
+        output_path = output_dir / "pod_placement_heatmap.png"
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        logger.info(f"Pod placement heatmap saved to {output_path}")
+        return str(output_path)
+
+    def create_resource_utilization_chart(self, output_dir: Path) -> str:
+        """Create resource utilization chart using seaborn."""
+        logger.info("Creating resource utilization chart...")
+
+        # Prepare data
+        utilization_data = []
         for node in self.nodes:
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
             total_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
-            total_vram_available = node["gpu_count"] * GPU_MEMORY_GB
+            total_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
-            vram_data.append(
+            utilization_data.append(
                 {
                     "node": node["name"],
-                    "used": total_vram_used,
-                    "available": total_vram_available,
-                    "usage_percent": (total_vram_used / total_vram_available * 100)
-                    if total_vram_available > 0
+                    "vram_used_gb": total_vram_used,
+                    "vram_capacity_gb": total_vram_capacity,
+                    "vram_utilization": (total_vram_used / total_vram_capacity * 100)
+                    if total_vram_capacity > 0
                     else 0,
+                    "pod_count": len(node_pods),
+                    "pod_density": len(node_pods) / TOTAL_GPUS_PER_NODE,
                 }
             )
 
-        # Create utilization chart
+        df = pd.DataFrame(utilization_data)
+
+        # Create the chart
         plt.figure(figsize=(15, 10))
 
-        # Overall utilization
+        # 1. VRAM Utilization by Node
         plt.subplot(2, 2, 1)
-        nodes = [data["node"] for data in vram_data]
-        usage = [data["usage_percent"] for data in vram_data]
-        bars = plt.bar(nodes, usage, color="skyblue", alpha=0.7)
-
-        # Add utilization percentage on bars
-        for bar, percent in zip(bars, usage):
-            height = bar.get_height()
-            plt.text(
-                bar.get_x() + bar.get_width() / 2.0,
-                height,
-                f"{percent:.1f}%",
-                ha="center",
-                va="bottom",
-            )
-
+        sns.barplot(data=df, x="node", y="vram_utilization", palette="coolwarm")
         plt.title("VRAM Utilization by Node")
         plt.xlabel("Node")
         plt.ylabel("Utilization (%)")
-        plt.ylim(0, 100)
         plt.xticks(rotation=45)
+        for i, v in enumerate(df["vram_utilization"]):
+            plt.text(i, v + 1, f"{v:.1f}%", ha="center", va="bottom")
 
-        # VRAM capacity comparison
+        # 2. VRAM Capacity vs Usage
         plt.subplot(2, 2, 2)
-        used_vram = [data["used"] for data in vram_data]
-        available_vram = [data["available"] for data in vram_data]
-        x = np.arange(len(nodes))
-        width = 0.35
-
-        plt.bar(x - width / 2, used_vram, width, label="Used", color="coral")
-        plt.bar(
-            x + width / 2, available_vram, width, label="Available", color="lightblue"
+        df_melted = df.melt(
+            id_vars=["node"],
+            value_vars=["vram_used_gb", "vram_capacity_gb"],
+            var_name="VRAM Type",
+            value_name="VRAM (GB)",
         )
+        sns.barplot(
+            data=df_melted,
+            x="node",
+            y="VRAM (GB)",
+            hue="VRAM Type",
+            palette=["coral", "lightblue"],
+        )
+        plt.title("VRAM Capacity vs Usage")
         plt.xlabel("Node")
         plt.ylabel("VRAM (GB)")
-        plt.title("VRAM Capacity vs Usage")
-        plt.xticks(x, nodes, rotation=45)
-        plt.legend()
+        plt.xticks(rotation=45)
 
-        # Pod density per GPU
+        # 3. Pod Density
         plt.subplot(2, 2, 3)
-        pod_counts = []
-        for node in self.nodes:
-            node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
-            pod_count = len(node_pods) / max(node["gpu_count"], 1)  # Pods per GPU
-            pod_counts.append(pod_count)
-
-        plt.bar(nodes, pod_counts, color="lightgreen", alpha=0.7)
-        plt.title("Pods per GPU (Density)")
+        sns.barplot(data=df, x="node", y="pod_density", palette="viridis")
+        plt.title("Pod Density per GPU")
         plt.xlabel("Node")
         plt.ylabel("Pods per GPU")
         plt.xticks(rotation=45)
 
-        # Memory pressure indicators
+        # 4. Resource Overview
         plt.subplot(2, 2, 4)
-        memory_pressure = []
-        for data in vram_data:
-            if data["usage_percent"] > 80:
-                pressure = "High"
-            elif data["usage_percent"] > 60:
-                pressure = "Medium"
-            else:
-                pressure = "Low"
-            memory_pressure.append(pressure)
+        resource_data = []
+        for _, row in df.iterrows():
+            resource_data.extend(
+                [
+                    {
+                        "node": row["node"],
+                        "resource": "VRAM Used",
+                        "value": row["vram_used_gb"],
+                    },
+                    {
+                        "node": row["node"],
+                        "resource": "VRAM Capacity",
+                        "value": row["vram_capacity_gb"],
+                    },
+                    {
+                        "node": row["node"],
+                        "resource": "Pod Count",
+                        "value": row["pod_count"],
+                    },
+                ]
+            )
 
-        pressure_counts = pd.Series(memory_pressure).value_counts()
-        pressure_counts.plot(
-            kind="pie",
-            autopct="%1.1f%%",
-            startangle=90,
-            colors=["red", "orange", "green"],
+        resource_df = pd.DataFrame(resource_data)
+        sns.barplot(
+            data=resource_df, x="node", y="value", hue="resource", palette="Set2"
         )
-        plt.title("Memory Pressure Distribution")
-        plt.ylabel("")
+        plt.title("Resource Overview")
+        plt.xlabel("Node")
+        plt.ylabel("Value")
+        plt.xticks(rotation=45)
 
         plt.tight_layout()
+        plt.suptitle(
+            f"{CLUSTER_NAME} - Resource Utilization Analysis", fontsize=16, y=0.98
+        )
 
         # Save the plot
-        output_path = output_dir / "vram_utilization.png"
+        output_path = output_dir / "resource_utilization.png"
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
         plt.close()
 
-        logger.info(f"VRAM utilization chart saved to {output_path}")
+        logger.info(f"Resource utilization chart saved to {output_path}")
         return str(output_path)
 
     def create_interactive_dashboard(self, output_dir: Path) -> str:
         """Create interactive dashboard using Plotly."""
         logger.info("Creating interactive dashboard...")
 
-        # Prepare data for interactive plots
+        # Prepare data
         node_data = []
         for node in self.nodes:
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
             total_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
-            total_vram_available = node["gpu_count"] * GPU_MEMORY_GB
+            total_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
             node_data.append(
                 {
                     "node": node["name"],
-                    "gpu_count": node["gpu_count"],
                     "vram_used_gb": total_vram_used,
-                    "vram_available_gb": total_vram_available,
-                    "vram_usage_percent": (total_vram_used / total_vram_available * 100)
-                    if total_vram_available > 0
+                    "vram_capacity_gb": total_vram_capacity,
+                    "vram_utilization": (total_vram_used / total_vram_capacity * 100)
+                    if total_vram_capacity > 0
                     else 0,
                     "pod_count": len(node_pods),
-                    "memory_total_gb": node["memory_total_gb"],
-                    "memory_available_gb": node["memory_available_gb"],
                 }
             )
 
         # Create subplots
-        fig = make_subplots(
+        fig = sps.make_subplots(
             rows=2,
             cols=2,
             subplot_titles=(
-                "VRAM Usage by Node",
-                "Pods per Node",
-                "Memory Overview",
-                "Pod Types by Node",
+                "VRAM Utilization",
+                "Pod Count",
+                "VRAM Capacity",
+                "Resource Overview",
             ),
             specs=[
                 [{"secondary_y": False}, {"secondary_y": False}],
@@ -658,83 +556,60 @@ class GPUClusterVisualizer:
             ],
         )
 
-        # VRAM Usage
+        # VRAM Utilization
         nodes = [data["node"] for data in node_data]
-        vram_usage = [data["vram_usage_percent"] for data in node_data]
+        vram_util = [data["vram_utilization"] for data in node_data]
 
         fig.add_trace(
             go.Bar(
-                x=nodes,
-                y=vram_usage,
-                name="VRAM Usage %",
-                marker_color="coral",
-                showlegend=False,
+                x=nodes, y=vram_util, name="VRAM Utilization %", marker_color="coral"
             ),
             row=1,
             col=1,
         )
 
-        # Pods per Node
+        # Pod Count
         pod_counts = [data["pod_count"] for data in node_data]
 
         fig.add_trace(
-            go.Bar(
-                x=nodes,
-                y=pod_counts,
-                name="Pod Count",
-                marker_color="lightblue",
-                showlegend=False,
-            ),
+            go.Bar(x=nodes, y=pod_counts, name="Pod Count", marker_color="lightblue"),
             row=1,
             col=2,
         )
 
-        # Memory Overview
-        memory_used = [
-            data["memory_total_gb"] - data["memory_available_gb"] for data in node_data
-        ]
-        memory_total = [data["memory_total_gb"] for data in node_data]
+        # VRAM Capacity
+        vram_used = [data["vram_used_gb"] for data in node_data]
+        vram_capacity = [data["vram_capacity_gb"] for data in node_data]
 
         fig.add_trace(
-            go.Bar(
-                x=nodes,
-                y=memory_used,
-                name="Memory Used",
-                marker_color="orange",
-                showlegend=False,
-            ),
+            go.Bar(x=nodes, y=vram_used, name="VRAM Used", marker_color="orange"),
             row=2,
             col=1,
         )
         fig.add_trace(
             go.Bar(
                 x=nodes,
-                y=memory_total,
-                name="Memory Total",
+                y=vram_capacity,
+                name="VRAM Capacity",
                 marker_color="lightgreen",
-                showlegend=False,
             ),
             row=2,
             col=1,
         )
 
-        # Pod Types by Node
+        # Resource Overview
         for node in nodes:
-            node_pods = [p for p in self.gpu_pods if p["node_name"] == node]
-            for pod_type in ["qwen", "yolo", "vllm", "mig", "spread", "other"]:
-                count = len([p for p in node_pods if p["pod_type"] == pod_type])
-                if count > 0:
-                    fig.add_trace(
-                        go.Bar(
-                            x=[node],
-                            y=[count],
-                            name=f"{pod_type}",
-                            marker_color=POD_COLORS.get(pod_type, "gray"),
-                            showlegend=False if pod_type != "qwen" else True,
-                        ),
-                        row=2,
-                        col=2,
-                    )
+            node_data_local = [d for d in node_data if d["node"] == node][0]
+            fig.add_trace(
+                go.Bar(
+                    x=[node],
+                    y=[node_data_local["pod_count"]],
+                    name="Pod Count",
+                    marker_color="purple",
+                ),
+                row=2,
+                col=2,
+            )
 
         # Update layout
         fig.update_layout(
@@ -763,12 +638,15 @@ class GPUClusterVisualizer:
         results = {}
 
         if not interactive_only:
-            results["cluster_heatmap"] = self.create_cluster_heatmap(output_dir)
-            results["pod_placement_map"] = self.create_pod_placement_map(output_dir)
-            results["pod_type_distribution"] = self.create_pod_type_distribution(
+            results["cluster_visualization"] = self.create_cluster_visualization(
                 output_dir
             )
-            results["vram_utilization"] = self.create_vram_utilization_chart(output_dir)
+            results["pod_placement_heatmap"] = self.create_pod_placement_heatmap(
+                output_dir
+            )
+            results["resource_utilization"] = self.create_resource_utilization_chart(
+                output_dir
+            )
 
         results["interactive_dashboard"] = self.create_interactive_dashboard(output_dir)
 
@@ -785,9 +663,7 @@ class GPUClusterVisualizer:
         total_nodes = len(self.nodes)
         total_pods = len(self.gpu_pods)
         total_vram_used = sum(p["gpu_memory_gb"] for p in self.gpu_pods)
-        total_vram_capacity = sum(
-            node["gpu_count"] * GPU_MEMORY_GB for node in self.nodes
-        )
+        total_vram_capacity = total_nodes * TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
         # Pod type breakdown
         pod_type_counts = {}
@@ -819,12 +695,12 @@ Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
         for node in self.nodes:
             node_pods = [p for p in self.gpu_pods if p["node_name"] == node["name"]]
             node_vram_used = sum(p["gpu_memory_gb"] for p in node_pods)
-            node_vram_capacity = node["gpu_count"] * GPU_MEMORY_GB
+            node_vram_capacity = TOTAL_GPUS_PER_NODE * GPU_MEMORY_GB
 
             report_content += f"""
 ### Node: {node["name"]}
 - **Status**: {node["status"]}
-- **GPUs**: {node["gpu_count"]}
+- **GPUs**: {TOTAL_GPUS_PER_NODE}
 - **GPU Memory**: {node_vram_capacity}GB total
 - **VRAM Usage**: {node_vram_used:.1f}GB ({(node_vram_used / node_vram_capacity * 100) if node_vram_capacity > 0 else 0:.1f}%)
 - **GPU Pods**: {len(node_pods)}
@@ -838,7 +714,7 @@ Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
         for pod_type, count in pod_type_counts.items():
             report_content += f"- **{pod_type.title()}**: {count} pods\n"
 
-        report_content += """
+        report_content += f"""
 
 ## Pod Distribution by Node
 """
@@ -864,9 +740,6 @@ def main():
         help="Output directory for visualizations",
     )
     parser.add_argument(
-        "--kubeconfig", type=str, default=None, help="Path to kubeconfig file"
-    )
-    parser.add_argument(
         "--interactive-only",
         action="store_true",
         help="Generate only interactive dashboard",
@@ -880,14 +753,17 @@ def main():
     logger.info("Starting GPU cluster visualization...")
 
     try:
-        visualizer = GPUClusterVisualizer(kubeconfig=args.kubeconfig)
+        visualizer = SeabornGPUVisualizer()
         results = visualizer.generate_all_visualizations(
             output_dir, args.interactive_only
         )
 
         print("\nGenerated visualizations:")
         for viz_type, path in results.items():
-            print(f"  {viz_type}: {path}")
+            if path:
+                print(f"  {viz_type}: {path}")
+            else:
+                print(f"  {viz_type}: No data available")
 
         if not any(results.values()):
             print(
