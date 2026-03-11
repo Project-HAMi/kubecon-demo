@@ -54,10 +54,10 @@ visualize() {
     
     # Generate visualizations
     echo "Generating GPU cluster visualizations..."
-    python3 scripts/gpu_visualization.py --output-dir ./visualization_output
+    python3 scripts/gpu_visualization.py --output-dir ./output
     
     echo "=== Visualization Complete ==="
-    echo "Output saved to ./visualization_output/"
+    echo "Output saved to ./output/"
     echo "Generated files:"
     echo "  - cluster_heatmap.png: Cluster-wide VRAM usage heatmap"
     echo "  - pod_placement_map.png: Detailed pod placement on individual GPUs"
