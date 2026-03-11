@@ -19,10 +19,12 @@ test_qwen8b() {
     kubectl exec -it "$POD_NAME" -- nvidia-smi
     
     echo "Step 3: Testing chat API with streaming output..."
-    python3 test_vllm.py
+    python3 ./scripts/test_vllm.py
     
     echo "Step 4: Checking GPU resources on host node..."
-    kubectl get nodes -o name | xargs -I {} kubectl node-shell {} -- nvidia-smi
+    NODE_NAME=$(kubectl get pods -l app=qwen8b -o jsonpath='{.items[0].spec.nodeName}')
+    echo "Found qwen8b pod on node: $NODE_NAME"
+    ssh "$NODE_NAME" nvidia-smi
     
     if [[ "${USE_PORT_FORWARD:-false}" == "true" ]]; then
         echo "Step 5: Cleaning up port-forward..."
