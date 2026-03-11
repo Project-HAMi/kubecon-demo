@@ -8,6 +8,7 @@ Generates interactive HTML dashboard only.
 Usage:
     python3 gpu_visualization.py
     python3 gpu_visualization.py --output-dir ./output
+    python3 gpu_visualization.py --pod-status Running
 """
 
 import argparse
@@ -43,8 +44,9 @@ POD_COLORS = {
 class SeabornGPUVisualizer:
     """Simplified GPU visualizer using seaborn and nvidia-smi for VRAM info."""
 
-    def __init__(self):
+    def __init__(self, pod_status_filter="Scheduled,Running"):
         """Initialize visualizer."""
+        self.pod_status_filter = pod_status_filter
         self.nodes = self._get_nodes()
         self.pods = self._get_pods()
         self.gpu_pods = self._filter_gpu_pods()
@@ -103,12 +105,30 @@ class SeabornGPUVisualizer:
         try:
             data = json.loads(output)
             for pod in data["items"]:
+                # Get detailed status including container states
+                status = pod["status"]["phase"]
+                container_statuses = pod.get("status", {}).get("containerStatuses", [])
+
+                # Check if all containers are running
+                all_running = True
+                if container_statuses:
+                    for container in container_statuses:
+                        if container.get("state", {}).get("running") is None:
+                            all_running = False
+                            break
+                    if all_running:
+                        status = "Running"
+
+                # Remove pod hash/version from name
+                pod_name = pod["metadata"]["name"]
+                clean_name = pod_name.rsplit("-", 1)[0] if "-" in pod_name else pod_name
+
                 pods.append(
                     {
-                        "name": pod["metadata"]["name"],
+                        "name": pod_name,
                         "namespace": pod["metadata"]["namespace"],
                         "node_name": pod["spec"]["nodeName"],
-                        "status": pod["status"]["phase"],
+                        "status": status,
                         "pod_type": self._classify_pod_type(pod),
                         "gpu_memory_gb": self._get_gpu_memory_from_pod(pod),
                         "gpu_count": self._get_gpu_count_from_pod(pod),
@@ -167,30 +187,39 @@ class SeabornGPUVisualizer:
             .get("limits", {})
         )
         gpumem = resources.get("nvidia.com/gpumem", "0")
-        
-        if gpumem.endswith('k'): # since gpumem is always in MB 'k' is the same as 'G'
-            return float(gpumem[:-1])
-        elif gpumem.endswith('G'):
-            return float(gpumem[:-1])
-        elif gpumem.endswith('m'):
-            return float(gpumem[:-1]) / 1024
+
+        if gpumem.endswith("k"):  # since gpumem is always in MB 'k' is the same as 'G'
+            result = float(gpumem[:-1])
+        elif gpumem.endswith("G"):
+            result = float(gpumem[:-1])
         elif gpumem.endswith("m"):
             result = float(gpumem[:-1]) / 1024
-            print(f"DEBUG: Converted {gpumem} to {result}GB")
-            return result
+        elif gpumem.endswith("m"):
+            result = float(gpumem[:-1]) / 1024
         else:
             # Most GPU pods in HAMi specify memory in bytes, but the values are
             # actually very large (e.g., 25600 bytes = 25GB), so this seems wrong.
             # Let's assume these values are actually in MB for realistic GPU allocations.
             result = float(gpumem) / 1024
-            print(f"DEBUG: Assuming {gpumem} is in MB, converted to {result}GB")
             return result
+
+        print(f"DEBUG: Converted {gpumem} to {result}GB")
+        return result
 
     def _filter_gpu_pods(self) -> List[Dict[str, Any]]:
         """Filter pods that use GPUs."""
         gpu_pods = []
 
         for pod in self.pods:
+            # Filter by pod status if specified
+            pod_status = pod.get("status", "")
+            if hasattr(self, "pod_status_filter"):
+                allowed_statuses = [
+                    s.strip() for s in self.pod_status_filter.split(",")
+                ]
+                if pod_status not in allowed_statuses:
+                    continue
+
             if pod["gpu_count"] > 0 or pod["pod_type"] in [
                 "qwen",
                 "yolo",
@@ -416,6 +445,12 @@ def main():
         default="./output",
         help="Output directory for dashboard",
     )
+    parser.add_argument(
+        "--pod-status",
+        type=str,
+        default="Scheduled,Running",
+        help="Filter pods by status. Default: 'Scheduled,Running'. Use 'Running' for only running pods",
+    )
 
     args = parser.parse_args()
 
@@ -425,7 +460,7 @@ def main():
     logger.info("Starting GPU cluster visualization...")
 
     try:
-        visualizer = SeabornGPUVisualizer()
+        visualizer = SeabornGPUVisualizer(args.pod_status)
         results = visualizer.generate_all_visualizations(output_dir)
 
         print("\nGenerated dashboard:")
