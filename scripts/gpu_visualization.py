@@ -207,64 +207,16 @@ class SeabornGPUVisualizer:
                 }
             )
 
-        # Create subplots
+        # Create single subplot for stacked bar chart
         fig = sps.make_subplots(
-            rows=2,
-            cols=2,
-            subplot_titles=(
-                "VRAM Utilization",
-                "Pod Count",
-                "VRAM Capacity",
-                "VRAM Utilization by Workload Type",
-            ),
-            specs=[
-                [{"secondary_y": False}, {"secondary_y": False}],
-                [{"secondary_y": False}, {"secondary_y": False}],
-            ],
+            rows=1,
+            cols=1,
+            subplot_titles=("VRAM Utilization by Workload Type",),
+            specs=[[{"secondary_y": False}]],
         )
 
-        # VRAM Utilization
+        # Get nodes and aggregate VRAM data
         nodes = [data["node"] for data in node_data]
-        vram_util = [data["vram_utilization"] for data in node_data]
-
-        fig.add_trace(
-            go.Bar(
-                x=nodes, y=vram_util, name="VRAM Utilization %", marker_color="coral"
-            ),
-            row=1,
-            col=1,
-        )
-
-        # Pod Count
-        pod_counts = [data["pod_count"] for data in node_data]
-
-        fig.add_trace(
-            go.Bar(x=nodes, y=pod_counts, name="Pod Count", marker_color="lightblue"),
-            row=1,
-            col=2,
-        )
-
-        # VRAM Capacity
-        vram_used = [data["vram_used_gb"] for data in node_data]
-        vram_capacity = [data["vram_capacity_gb"] for data in node_data]
-
-        fig.add_trace(
-            go.Bar(x=nodes, y=vram_used, name="VRAM Used", marker_color="orange"),
-            row=2,
-            col=1,
-        )
-        fig.add_trace(
-            go.Bar(
-                x=nodes,
-                y=vram_capacity,
-                name="VRAM Capacity",
-                marker_color="lightgreen",
-            ),
-            row=2,
-            col=1,
-        )
-
-        # Stacked Bar Chart for VRAM Utilization by Workload Type
         node_workload_vram = self._aggregate_vram_by_workload()
 
         # Add unused capacity (green base)
@@ -283,8 +235,8 @@ class SeabornGPUVisualizer:
                 textposition="inside",
                 showlegend=False,
             ),
-            row=2,
-            col=2,
+            row=1,
+            col=1,
         )
 
         # Add workload segments
@@ -304,12 +256,14 @@ class SeabornGPUVisualizer:
                         textposition="inside",
                         showlegend=True,
                     ),
-                    row=2,
-                    col=2,
+                    row=1,
+                    col=1,
                 )
 
-        # Update layout to set barmode for all subplots
-        fig.update_layout(barmode="stack")
+        # Update layout to set barmode
+        fig.update_layout(
+            barmode="stack", yaxis_title="VRAM (GB)", xaxis_title="Node", height=600
+        )
 
         # Update x-axis labels
         fig.update_xaxes(title_text="Node", tickangle=45)
