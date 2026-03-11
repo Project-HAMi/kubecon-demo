@@ -2,7 +2,7 @@ releases:
   - name: hami-core
     namespace: kube-system
     chart: hami-charts/hami
-    version: "2.8.0"
+    version: "2.7.1" # potential CDI issue in 2.8.0
     set:
       - name: scheduler.kubeScheduler.imageTag
         value: "v1.28.0"
