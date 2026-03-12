@@ -16,9 +16,10 @@ import os
 API_URL_LOCAL = "http://localhost:8000/v1"
 
 
-def start_port_forward(app_label):
+def start_port_forward(app_label, port):
     """Start kubectl port-forward in background"""
-    cmd = ["kubectl", "port-forward", f"svc/{app_label}", "8000:8000"]
+    print(f"Start Port-forward {app_label} {port}")
+    cmd = ["kubectl", "port-forward", f"svc/{app_label}", f"{port}:vllm-svc"]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # Give port-forward time to establish
@@ -36,17 +37,19 @@ def cleanup_port_forward(pid):
         pass  # Process already terminated
 
 
-def test_vllm_api(app_label, model):
+def test_vllm_api(app_label, model, port=8000):
     """Test vLLM API with a simple chat completion request"""
-    PORT_FORWARD_PID = start_port_forward(app_label)
+    PORT_FORWARD_PID = start_port_forward(app_label,port)  # Initialize to fix LSP error
+    API_URL_SERVICE = f"http://localhost:{port}/v1"
 
     try:
         # Try service URL first
         client = openai.OpenAI(
-            base_url=API_URL_LOCAL,
+            base_url=API_URL_SERVICE,
             api_key="dummy",
         )
         print(f"Testing vLLM deployment with model: {model}")
+        print(f"API URL (Service): {API_URL_SERVICE}")
         print("-" * 60)
 
         max_retries = 30  # 5 minutes total (30 * 10 seconds)
@@ -136,4 +139,25 @@ def test_vllm_api(app_label, model):
 
 
 if __name__ == "__main__":
-    sys.exit(test_vllm_api())
+    parser = argparse.ArgumentParser(description="Test vLLM API with specified model")
+    parser.add_argument(
+        "--app",
+        type=str,
+        default="qwen8b",
+        help="App label for the vLLM deployment (default: qwen8b)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="Qwen/Qwen3-8B",
+        help="Model name to test (default: Qwen/Qwen3-8B)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Local port for port-forward (default: 8000)",
+    )
+    args = parser.parse_args()
+
+    sys.exit(test_vllm_api(args.app, args.model, args.port))

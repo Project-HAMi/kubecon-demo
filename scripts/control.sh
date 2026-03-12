@@ -46,7 +46,8 @@ test_mig() {
     python3 ./scripts/gpu_visualization.py
 
     echo "Step 3: Testing chat API with streaming output..."
-    python3 ./scripts/test_vllm.py
+    python3 ./scripts/test_vllm.py --app mig --model "Qwen/Qwen3-4B"
+
     
     echo "Step 4: Checking GPU resources on host node..."
     NODE_NAME=$(kubectl get pods -l app=mig -o jsonpath='{.items[0].spec.nodeName}')
