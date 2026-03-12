@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qwen3-4b-mig
+  annotations:
+    nvidia.com/vgpu-mode: "mig"
+spec:
+  containers:
+  - image: vllm/vllm-openai:latest
+    imagePullPolicy: IfNotPresent
+    name: qwen3-4b-mig
+    env:
+    - name: LIBCUDA_LOG_LEVEL
+      value: "2"
+    - name: GPU_CORE_UTILIZATION_POLICY
+      value: force
+    command:
+    - vllm
+    - serve
+    - Qwen/Qwen3-4B
+    - --dtype=auto
+    - --max-model-len=512
+    - --enforce-eager
+    resources:
+      limits:
+        nvidia.com/gpu: "1"
+        nvidia.com/gpucores: "30"
+        nvidia.com/gpumem: "10240"
