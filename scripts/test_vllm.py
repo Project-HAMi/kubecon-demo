@@ -43,6 +43,7 @@ def test_vllm_api():
     API_URL = API_URL_LOCAL
 
     print("🔄 Attempting port-forward...")
+    time.sleep(10)  # Wait 10 seconds before trying
     PORT_FORWARD_PID = start_port_forward()
     print(f"✓ Port-forward established, using: {API_URL_LOCAL}")
 

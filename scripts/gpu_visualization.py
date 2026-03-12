@@ -237,7 +237,7 @@ class SeabornGPUVisualizer:
 
     def create_interactive_dashboard(self, output_dir: Path) -> str:
         """Create interactive dashboard using Plotly."""
-        logger.info("Creating interactive dashboard...")
+        logger.debug("Creating interactive dashboard...")
 
         node_data = []
         for node in self.nodes:
@@ -330,7 +330,7 @@ class SeabornGPUVisualizer:
         output_path = output_dir / "interactive_dashboard.html"
         fig.write_html(str(output_path))
 
-        logger.info(f"Interactive dashboard saved to {output_path}")
+        logger.debug(f"Interactive dashboard saved to {output_path}")
         return str(output_path)
 
     def generate_all_visualizations(
@@ -372,7 +372,7 @@ class SeabornGPUVisualizer:
 
     def _generate_summary_report(self, output_dir: Path) -> None:
         """Generate a text summary of the cluster state."""
-        logger.info("Generating summary report...")
+        logger.debug("Generating summary report...")
 
         total_nodes = len(self.nodes)
         total_pods = len(self.gpu_pods)
@@ -437,7 +437,7 @@ Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
         with open(output_path, "w") as f:
             f.write(report_content)
 
-        logger.info(f"Summary report saved to {output_path}")
+        logger.debug(f"Summary report saved to {output_path}")
 
 
 def main():
@@ -461,22 +461,22 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Starting GPU cluster visualization...")
+    logger.debug("Starting GPU cluster visualization...")
 
     try:
         visualizer = SeabornGPUVisualizer(args.pod_status)
         results = visualizer.generate_all_visualizations(output_dir)
 
-        print("\nGenerated dashboard:")
+        logger.info("Generated dashboard:")
         for viz_type, path in results.items():
             if path:
-                print(f"  {viz_type}: {path}")
+                logger.info(f"{viz_type}: {path}")
             else:
-                print(f"  {viz_type}: No data available")
+                logger.info(f"{viz_type}: No data available")
 
         if not any(results.values()):
-            print(
-                "Warning: No dashboard generated - check cluster status and permissions"
+            logger.info(
+                "No dashboard generated - check cluster status and permissions"
             )
 
     except Exception as e:

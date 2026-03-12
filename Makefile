@@ -14,7 +14,7 @@ deploy-qwen:
 	@helmfile -f helmfile.d/04-qwen.yaml apply
 
 deploy-mig:
-	@echo "=== Deploying Qwen Workload ==="
+	@echo "=== Deploying MIG Workload ==="
 	@echo "helmfile -f helmfile.d/05-mig.yaml apply"
 	@helmfile -f helmfile.d/05-mig.yaml apply
 
@@ -34,8 +34,8 @@ test1: deploy-qwen
 	@echo "=== Qwen Test Complete ==="
 
 test2: deploy-mig
-	@echo "=== Waiting for Qwen Deployment ==="
-	@kubectl wait --for=condition=ready pod -l app=mig --timeout=300s || { echo "Warning: Qwen pod not ready, continuing with test..."; }
+	@echo "=== Waiting for MIG Deployment ==="
+	@kubectl wait --for=condition=ready pod -l app=mig --timeout=300s || { echo "Warning: MIG pod not ready, continuing with test..."; }
 	@./scripts/control.sh --test-mig
 
 destroy-qwen:
@@ -102,6 +102,5 @@ help:
 	@echo "  make clean           # Clean up everything"
 
 clean:
-	@echo "=== Cleanup Mode ==="
 	@helmfile destroy
 	@echo "✓ Cleanup complete"

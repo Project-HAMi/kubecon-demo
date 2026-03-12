@@ -1,25 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: qwen3-4b-mig
-  labels:
-    app: mig
+  name: qwen3-8b
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mig
+      app: qwen3-8b
   template:
     metadata:
       labels:
-        app: mig
+        app: qwen3-8b
       annotations:
-        nvidia.com/vgpu-mode: "mig"
+        hami.io/node-scheduler-policy: binpack
+        hami.io/gpu-scheduler-policy: binpack
     spec:
       containers:
-        - image: vllm/vllm-openai:latest
+        - name: qwen3-8b
+          image: vllm/vllm-openai:latest
           imagePullPolicy: IfNotPresent
-          name: qwen3-4b-mig
           env:
             - name: LIBCUDA_LOG_LEVEL
               value: "2"
@@ -28,25 +27,27 @@ spec:
           command:
             - vllm
             - serve
-            - Qwen/Qwen3-4B
+            - Qwen/Qwen3-8B
             - --dtype=auto
-            - --max-model-len=512
+            - --max-model-len=1024
             - --enforce-eager
           resources:
             limits:
               nvidia.com/gpu: "1"
               nvidia.com/gpucores: "30"
-              nvidia.com/gpumem: "10240"
+              nvidia.com/gpumem: "25600"
+      nodeSelector:
+        kubernetes.io/hostname: k8s-worker-2
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: qwen3-4b-mig
+  name: qwen3-8b
 spec:
   selector:
-    app: mig
+    app: qwen3-8b
   ports:
     - protocol: TCP
-      port: 8010
+      port: 8020
       targetPort: 8000
   type: ClusterIP

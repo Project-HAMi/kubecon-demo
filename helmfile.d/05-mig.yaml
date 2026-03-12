@@ -1,0 +1,7 @@
+releases:
+  - name: mig
+    namespace: default
+    chart: ../charts/mig
+    labels:
+      component: llm-workload
+      tag: mig
