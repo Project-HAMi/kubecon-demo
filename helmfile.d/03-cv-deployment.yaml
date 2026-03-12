@@ -1,6 +1,6 @@
 # Helmfile for Computer Vision Workload
 releases:
-  - name: yolov8n-detection
+  - name: yolov8n
     namespace: default
     chart: ../charts/yolo8
     labels:
