@@ -20,7 +20,6 @@ MODEL = "Qwen/Qwen3-8B"
 
 def start_port_forward():
     """Start kubectl port-forward in background"""
-    # Start port-forward in background
     cmd = ["kubectl", "port-forward", "svc/qwen8b", "8000:8000"]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -50,36 +49,49 @@ def test_vllm_api():
             api_key="dummy",
         )
 
-        # Test connection to service URL
+        print("🔄 Attempting port-forward...")
+
+        PORT_FORWARD_PID = start_port_forward()
+        API_URL = API_URL_LOCAL
+        client = openai.OpenAI(
+            base_url=API_URL_LOCAL,
+            api_key="dummy",
+        )
+        print(f"✓ Port-forward established, using: {API_URL_LOCAL}")
+
         print(f"Testing vLLM deployment with model: {MODEL}")
-        print(f"API URL (Service): {API_URL_SERVICE}")
         print("-" * 60)
 
-        # Try to connect to service URL
-        try:
-            # Quick test request to check service accessibility
-            test_response = client.chat.completions.create(
-                model=MODEL,
-                messages=[{"role": "user", "content": "test"}],
-                max_tokens=1,
-            )
-            print("✓ Service URL accessible")
-            API_URL = API_URL_SERVICE
+        max_retries = 30  # 5 minutes total (30 * 10 seconds)
+        retry_count = 0
+        API_URL = None
 
-        except Exception as service_error:
-            print(f"⚠ Service URL not accessible: {service_error}")
-            print("🔄 Attempting port-forward...")
+        while retry_count < max_retries:
+            try:
+                test_response = client.chat.completions.create(
+                    model=MODEL,
+                    messages=[{"role": "user", "content": "test"}],
+                    max_tokens=1,
+                )
+                print("✓ Service URL accessible")
+                API_URL = API_URL_SERVICE
+                break
 
-            # Start port-forward in background and use local URL
-            PORT_FORWARD_PID = start_port_forward()
-            API_URL = API_URL_LOCAL
-            client = openai.OpenAI(
-                base_url=API_URL_LOCAL,
-                api_key="dummy",
-            )
-            print(f"✓ Port-forward established, using: {API_URL_LOCAL}")
+            except Exception as service_error:
+                retry_count += 1
+                elapsed_time = retry_count * 10
 
-        # Continue with regular streaming test
+                if retry_count == 1:
+                    print(f"⚠ Service URL not accessible: {service_error}")
+                    print("🔄 Waiting for vLLM to start up...")
+
+                print(
+                    f"   Retry {retry_count}/{max_retries} - Elapsed: {elapsed_time}s"
+                )
+
+                if retry_count < max_retries:
+                    time.sleep(10)  # Wait 10 seconds before retrying
+
         response = client.chat.completions.create(
             model=MODEL,
             messages=[
@@ -94,7 +106,6 @@ def test_vllm_api():
             stream=True,
         )
 
-        # Extract and display the response
         print("Response from vLLM:")
         print("-" * 60)
 
@@ -105,7 +116,6 @@ def test_vllm_api():
         print("\n" + "-" * 60)
         print("✓ Test successful!")
 
-        # Cleanup port-forward if started
         try:
             cleanup_port_forward(PORT_FORWARD_PID)
         except:
