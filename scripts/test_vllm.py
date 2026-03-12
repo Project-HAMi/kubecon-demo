@@ -7,20 +7,18 @@ Connects to the vLLM service and sends a request
 import openai
 import sys
 import subprocess
+import argparse
 import signal
 import time
 import os
 
 # Configuration
-API_URL_SERVICE = "http://qwen8b-service.default.svc.cluster.local:8000/v1"
 API_URL_LOCAL = "http://localhost:8000/v1"
-API_URL = API_URL_SERVICE  # Default to service URL
-MODEL = "Qwen/Qwen3-8B"
 
 
-def start_port_forward():
+def start_port_forward(app_label):
     """Start kubectl port-forward in background"""
-    cmd = ["kubectl", "port-forward", "svc/qwen8b", "8000:8000"]
+    cmd = ["kubectl", "port-forward", f"svc/{app_label}", "8000:8000"]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # Give port-forward time to establish
@@ -38,36 +36,30 @@ def cleanup_port_forward(pid):
         pass  # Process already terminated
 
 
-def test_vllm_api():
+def test_vllm_api(app_label, model):
     """Test vLLM API with a simple chat completion request"""
-    API_URL = API_URL_LOCAL
-
-    print("🔄 Attempting port-forward...")
-    time.sleep(10)  # Wait 10 seconds before trying
-    PORT_FORWARD_PID = start_port_forward()
-    print(f"✓ Port-forward established, using: {API_URL_LOCAL}")
+    PORT_FORWARD_PID = start_port_forward(app_label)
 
     try:
+        # Try service URL first
         client = openai.OpenAI(
-            base_url=API_URL,
+            base_url=API_URL_LOCAL,
             api_key="dummy",
         )
-        print(f"Testing vLLM deployment with model: {MODEL}")
+        print(f"Testing vLLM deployment with model: {model}")
         print("-" * 60)
 
         max_retries = 30  # 5 minutes total (30 * 10 seconds)
         retry_count = 0
-        API_URL = None
 
         while retry_count < max_retries:
             try:
                 test_response = client.chat.completions.create(
-                    model=MODEL,
+                    model=model,
                     messages=[{"role": "user", "content": "test"}],
                     max_tokens=1,
                 )
                 print("✓ Service URL accessible")
-                API_URL = API_URL_SERVICE
                 break
 
             except Exception as service_error:
@@ -86,7 +78,7 @@ def test_vllm_api():
                     time.sleep(10)  # Wait 10 seconds before retrying
 
         response = client.chat.completions.create(
-            model=MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {

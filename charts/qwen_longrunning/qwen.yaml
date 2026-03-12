@@ -50,4 +50,5 @@ spec:
     - protocol: TCP
       port: 8020
       targetPort: 8000
+      name: vllm-svc
   type: ClusterIP
