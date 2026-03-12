@@ -10,7 +10,13 @@ deploy-cv-workload:
 
 deploy-qwen:
 	@echo "=== Deploying Qwen Workload ==="
+	@echo "helmfile -f helmfile.d/04-qwen.yaml apply"
 	@helmfile -f helmfile.d/04-qwen.yaml apply
+
+deploy-mig:
+	@echo "=== Deploying Qwen Workload ==="
+	@echo "helmfile -f helmfile.d/05-mig.yaml apply"
+	@helmfile -f helmfile.d/05-mig.yaml apply
 
 verify-deployment:
 	@echo "=== Verifying Deployments ==="
@@ -27,9 +33,19 @@ test1: deploy-qwen
 	@./scripts/control.sh -q8
 	@echo "=== Qwen Test Complete ==="
 
+test2: deploy-mig
+	@echo "=== Waiting for Qwen Deployment ==="
+	@kubectl wait --for=condition=ready pod -l app=mig --timeout=300s || { echo "Warning: Qwen pod not ready, continuing with test..."; }
+	@./scripts/control.sh --test-mig
+
 destroy-qwen:
-	@echo "=== Destroying Qwen Workload ==="
+	@echo "helmfile -f helmfile.d/04-qwen.yaml destroy"
 	@helmfile -f helmfile.d/04-qwen.yaml destroy
+	@./scripts/gpu_visualization.py
+
+destroy-mig:
+	@echo "helmfile -f helmfile.d/05-mig.yaml destroy"
+	@helmfile -f helmfile.d/05-mig.yaml destroy
 
 destroy-cv-workload:
 	@echo "=== Destroying Computer Vision Workload ==="
@@ -82,6 +98,7 @@ help:
 	@echo "Examples:"
 	@echo "  make init            # Full initialization"
 	@echo "  make test1           # Deploy and test Qwen "
+	@echo "  make test2           # Deploy dynamic MIG"
 	@echo "  make clean           # Clean up everything"
 
 clean:

@@ -40,25 +40,17 @@ def cleanup_port_forward(pid):
 
 def test_vllm_api():
     """Test vLLM API with a simple chat completion request"""
-    PORT_FORWARD_PID = None  # Initialize to fix LSP error
+    API_URL = API_URL_LOCAL
+
+    print("🔄 Attempting port-forward...")
+    PORT_FORWARD_PID = start_port_forward()
+    print(f"✓ Port-forward established, using: {API_URL_LOCAL}")
 
     try:
-        # Try service URL first
         client = openai.OpenAI(
-            base_url=API_URL_SERVICE,
+            base_url=API_URL,
             api_key="dummy",
         )
-
-        print("🔄 Attempting port-forward...")
-
-        PORT_FORWARD_PID = start_port_forward()
-        API_URL = API_URL_LOCAL
-        client = openai.OpenAI(
-            base_url=API_URL_LOCAL,
-            api_key="dummy",
-        )
-        print(f"✓ Port-forward established, using: {API_URL_LOCAL}")
-
         print(f"Testing vLLM deployment with model: {MODEL}")
         print("-" * 60)
 

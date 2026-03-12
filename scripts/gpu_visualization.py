@@ -123,9 +123,8 @@ class SeabornGPUVisualizer:
                 # Remove pod hash/version from name using regex
                 pod_name = pod["metadata"]["name"]
                 # Remove hash pattern (e.g., -7fdf758cf8, -769648db94, -5¢56989dd6)
-                clean_name = re.sub(r"-[a-z0-9¢]{10}-[a-z0-9¢]{6}$", "", pod_name)
-
-                print(f"DEBUG: Converted {clean_name}")
+                clean_name = re.sub(r"-[a-z0-9]{10}-[a-z0-9]{6}$", "", pod_name)
+                # print(f"DEBUG: Converted {clean_name}")
 
                 pods.append(
                     {
@@ -208,7 +207,7 @@ class SeabornGPUVisualizer:
             result = float(gpumem) / 1024
             return result
 
-        print(f"DEBUG: Converted {gpumem} to {result}GB")
+        # print(f"DEBUG: Converted {gpumem} to {result}GB")
         return result
 
     def _filter_gpu_pods(self) -> List[Dict[str, Any]]:

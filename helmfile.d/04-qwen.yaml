@@ -1,7 +1,7 @@
 releases:
-  - name: qwen8b
+  - name: qwen
     namespace: default
-    chart: ../charts/qwen8b
+    chart: ../charts/qwen
     labels:
       component: llm-workload
-      tag: qwen8b
+      tag: qwen

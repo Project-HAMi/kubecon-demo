@@ -8,33 +8,53 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && (pwd -W 2> /dev
 cd "$SCRIPT_DIR/.."
 
 
-test_qwen8b() {
-    echo "=== Starting Qwen 8B Test Workflow ==="
+test_qwen() {
+    echo "=== Starting Qwen Test Workflow ==="
 
     echo "Step 1: Waiting for deployment readiness..."
-    kubectl wait --for=condition=ready pod -l app=qwen8b --timeout=300s
+    kubectl wait --for=condition=ready pod -l app=qwen --timeout=300s
 
     echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
-    POD_NAME=$(kubectl get pods -l app=qwen8b -o jsonpath='{.items[0].metadata.name}')
+    POD_NAME=$(kubectl get pods -l app=qwen -o jsonpath='{.items[0].metadata.name}')
     kubectl exec -it "$POD_NAME" -- nvidia-smi
     
+    echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
+    python3 ./scripts/gpu_visualization.py
+
     echo "Step 3: Testing chat API with streaming output..."
     python3 ./scripts/test_vllm.py
     
     echo "Step 4: Checking GPU resources on host node..."
-    NODE_NAME=$(kubectl get pods -l app=qwen8b -o jsonpath='{.items[0].spec.nodeName}')
-    echo "Found qwen8b pod on node: $NODE_NAME"
+    NODE_NAME=$(kubectl get pods -l app=qwen -o jsonpath='{.items[0].spec.nodeName}')
+    echo "Found qwen pod on node: $NODE_NAME"
     ssh "$NODE_NAME" nvidia-smi
     
-    if [[ "${USE_PORT_FORWARD:-false}" == "true" ]]; then
-        echo "Step 5: Cleaning up port-forward..."
-        kill $PORT_FORWARD_PID 2>/dev/null || true
-        echo "✓ Port-forward cleaned up"
-    fi
-    
-    echo "=== Qwen 8B Test Workflow Complete ==="
+    echo "=== Qwen Test Workflow Complete ==="
 }
 
+test_mig() {
+    echo "=== Starting MIG Test Workflow ==="
+
+    echo "Step 1: Waiting for deployment readiness..."
+    kubectl wait --for=condition=ready pod -l app=mig --timeout=300s
+
+    echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
+    POD_NAME=$(kubectl get pods -l app=mig -o jsonpath='{.items[0].metadata.name}')
+    kubectl exec -it "$POD_NAME" -- nvidia-smi
+    
+    echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
+    python3 ./scripts/gpu_visualization.py
+
+    echo "Step 3: Testing chat API with streaming output..."
+    python3 ./scripts/test_vllm.py
+    
+    echo "Step 4: Checking GPU resources on host node..."
+    NODE_NAME=$(kubectl get pods -l app=mig -o jsonpath='{.items[0].spec.nodeName}')
+    echo "Found mig pod on node: $NODE_NAME"
+    ssh "$NODE_NAME" nvidia-smi
+    
+    echo "=== MIG Test Workflow Complete ==="
+}
 visualize() {
     echo "=== Starting GPU Cluster Visualization ==="
     echo "Generating GPU cluster visualizations..."
@@ -51,8 +71,12 @@ POSITIONAL_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    -q8|--test-qwen8b)
-      TEST_QWEN8B=YES
+    -q8|--test-qwen)
+      TEST_QWEN=YES
+      shift # past argument
+      ;;
+    --test-mig)
+      TEST_MIG=YES
       shift # past argument
       ;;
     -pf|--port-forward)
@@ -70,20 +94,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -v TEST_QWEN8B ]]; then
-  test_qwen8b
+if [[ -v TEST_QWEN ]]; then
+  test_qwen
+elif [[ -v TEST_MIG ]]; then
+  test_mig
 elif [[ -v VISUALIZE ]]; then
   visualize
 else
     echo -n "\
 Please specify the right commandline option:
--q8/--test-qwen8b : test qwen8b
+-q8/--test-qwen : test qwen
 -pf/--port-forward : use port-forward for vLLM API access
 -v/--visualize    : generate GPU cluster visualizations
 
 Example usage:
-  ./control.sh -q8                            # Test Qwen 8B without port-forward
-  ./control.sh -q8 -pf                       # Test Qwen 8B with port-forward
+  ./control.sh -q8                            # Test Qwen without port-forward
+  ./control.sh -q8 -pf                       # Test Qwen with port-forward
   ./control.sh -v                            # Generate visualizations
 "
 fi
