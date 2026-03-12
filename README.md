@@ -26,7 +26,7 @@ make clean
 
 ### Core Commands
 - `make init` - Install HAMi core and deploy all workloads
-- `make test1` - Deploy Qwen 7B and run test
+- `make test1` - Deploy Qwen 8B and run test
 - `make clean` - Destroy all workloads and clean up
 
 ### Utility Commands

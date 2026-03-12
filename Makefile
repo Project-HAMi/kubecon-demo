@@ -8,8 +8,8 @@ deploy-cv-workload:
 	@echo "=== Deploying Computer Vision Workload ==="
 	@helmfile -f helmfile.d/03-cv-deployment.yaml apply
 
-deploy-qwen8b:
-	@echo "=== Deploying Qwen 8B Workload ==="
+deploy-qwen:
+	@echo "=== Deploying Qwen Workload ==="
 	@helmfile -f helmfile.d/04-qwen.yaml apply
 
 verify-deployment:
@@ -20,28 +20,28 @@ init: deploy-workloads deploy-cv-workload verify-deployment
 	@echo "=== HAMi Core and Workload Initialization Complete ==="
 	@kubectl get pods -A | grep -E "(hami|spread|mig|yolo)" | head -10
 
-test1: deploy-qwen8b
-	@echo "=== Waiting for Qwen 8B Deployment ==="
-	@kubectl wait --for=condition=ready pod -l app=qwen8b --timeout=300s || { echo "Warning: Qwen 8B pod not ready, continuing with test..."; }
-	@echo "=== Running Qwen 8B Test ==="
+test1: deploy-qwen
+	@echo "=== Waiting for Qwen Deployment ==="
+	@kubectl wait --for=condition=ready pod -l app=qwen --timeout=300s || { echo "Warning: Qwen pod not ready, continuing with test..."; }
+	@echo "=== Running Qwen Test ==="
 	@./scripts/control.sh -q8
-	@echo "=== Qwen 8B Test Complete ==="
+	@echo "=== Qwen Test Complete ==="
 
-destroy-qwen8b:
-	@echo "=== Destroying Qwen 8B Workload ==="
-	@helmfile -f helmfile.d/04-qwen8b.yaml destroy --ignore-not-found
+destroy-qwen:
+	@echo "=== Destroying Qwen Workload ==="
+	@helmfile -f helmfile.d/04-qwen.yaml destroy
 
 destroy-cv-workload:
 	@echo "=== Destroying Computer Vision Workload ==="
-	@helmfile -f helmfile.d/03-cv-deployment.yaml destroy --ignore-not-found
+	@helmfile -f helmfile.d/03-cv-deployment.yaml destroy
 
 destroy-workloads:
 	@echo "=== Destroying Basic Workloads ==="
-	@helmfile -f helmfile.d/02-workload.yaml destroy --ignore-not-found
+	@helmfile -f helmfile.d/02-workload.yaml destroy
 
 destroy-hami-core:
 	@echo "=== Destroying HAMi Core ==="
-	@helmfile -f helmfile.d/01-hami-core.yaml destroy --ignore-not-found
+	@helmfile -f helmfile.d/01-hami-core.yaml destroy
 
 status:
 	@echo "=== Cluster Status ==="
@@ -59,7 +59,7 @@ help:
 	@echo ""
 	@echo "Core Commands:"
 	@echo "  init          - Install HAMi core and deploy all workloads"
-	@echo "  test1         - Deploy Qwen 8B and run test"
+	@echo "  test1         - Deploy Qwen and run test"
 	@echo "  clean         - Destroy all workloads and clean up"
 	@echo ""
 	@echo "Individual Commands:"
@@ -70,21 +70,21 @@ help:
 	@echo "  install-hami-core    - Install HAMi core scheduler"
 	@echo "  deploy-workloads     - Deploy vLLM 4B + MIG workloads"
 	@echo "  deploy-cv-workload   - Deploy YOLOv8n CV workload"
-	@echo "  deploy-qwen8b        - Deploy Qwen 8B workload"
+	@echo "  deploy-qwen        - Deploy Qwen workload"
 	@echo "  verify-deployment    - Check deployment status"
 	@echo ""
 	@echo "Cleanup Commands:"
-	@echo "  destroy-qwen8b       - Destroy Qwen 8B workload"
+	@echo "  destroy-qwen       - Destroy Qwen workload"
 	@echo "  destroy-cv-workload  - Destroy CV workload"
 	@echo "  destroy-workloads     - Destroy basic workloads"
 	@echo "  destroy-hami-core     - Destroy HAMi core"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make init            # Full initialization"
-	@echo "  make test1           # Deploy and test Qwen 8B"
+	@echo "  make test1           # Deploy and test Qwen "
 	@echo "  make clean           # Clean up everything"
 
 clean:
 	@echo "=== Cleanup Mode ==="
-	@helmfile destroy --ignore-not-found
+	@helmfile destroy
 	@echo "✓ Cleanup complete"

@@ -43,10 +43,6 @@ visualize() {
     echo "=== Visualization Complete ==="
     echo "Output saved to ./output/"
     echo "Generated files:"
-    echo "  - cluster_heatmap.png: Cluster-wide VRAM usage heatmap"
-    echo "  - pod_placement_map.png: Detailed pod placement on individual GPUs"
-    echo "  - pod_type_distribution.png: Pod type distribution charts"
-    echo "  - vram_utilization.png: VRAM utilization analysis"
     echo "  - interactive_dashboard.html: Interactive Plotly dashboard"
     echo "  - visualization_report.txt: Text summary report"
 }
