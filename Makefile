@@ -101,6 +101,5 @@ help:
 	@echo "  make test2           # Deploy dynamic MIG"
 	@echo "  make clean           # Clean up everything"
 
-clean:
-	@helmfile destroy
+clean: destroy-qwen destroy-mig
 	@echo "✓ Cleanup complete"

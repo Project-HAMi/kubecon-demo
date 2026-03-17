@@ -8,8 +8,11 @@ Deployment of vLLM using HAMi heterogeneous GPU scheduling with support for mult
 # Initialize HAMi core and deploy all workloads
 make init
 
-# Test Qwen 7B deployment
+# Test Qwen deployment
 make test1
+
+# Test Dynamic MIG deployment
+make test2
 
 # Clean up all workloads
 make clean
@@ -26,17 +29,13 @@ make clean
 
 ### Core Commands
 - `make init` - Install HAMi core and deploy all workloads
-- `make test1` - Deploy Qwen 8B and run test
+- `make test1` - Deploy Qwen and run test
+- `make test2` - Deploy Dynamic MIG and run test
 - `make clean` - Destroy all workloads and clean up
 
 ### Utility Commands
 - `make status` - Show cluster and deployment status
 - `make help` - Display all available commands
-
-### Individual Operations
-- `make check-deps` - Check if prerequisites are available
-- `make teardown` - Clean up without force mode
-- `make add-hami-repo` - Add HAMi charts repository
 
 ## Files
 
