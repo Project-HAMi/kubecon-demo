@@ -20,7 +20,7 @@ spec:
       schedulerName: hami-scheduler
       containers:
         - name: vllm-qwen
-          image: vllm/vllm-openai:latest
+          image: vllm/vllm-openai:nightly-1f0d21064137f4fdc816864cf01832c26350be5a
           command:
             [
               "vllm",

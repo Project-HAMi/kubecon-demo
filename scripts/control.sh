@@ -18,16 +18,24 @@ test_qwen() {
     POD_NAME=$(kubectl get pods -l app=qwen -o jsonpath='{.items[0].metadata.name}')
     kubectl exec -it "$POD_NAME" -- nvidia-smi
     
-    echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
-    python3 ./scripts/gpu_visualization.py
-
-    echo "Step 3: Testing chat API with streaming output..."
-    python3 ./scripts/test_vllm.py --app qwen --model "Qwen/Qwen3-1.7B"
-    
-    echo "Step 4: Checking GPU resources on host node..."
+    echo "Step 3: Checking GPU resources on host node..."
     NODE_NAME=$(kubectl get pods -l app=qwen -o jsonpath='{.items[0].spec.nodeName}')
     echo "Found qwen pod on node: $NODE_NAME"
+
     ssh "$NODE_NAME" nvidia-smi
+    echo "Step 3: Checking GPU resources in container (should show 25GB allocation)..."
+    python3 ./scripts/gpu_visualization.py
+
+    echo "Step 4: Testing chat API with streaming output..."
+    python3 ./scripts/test_vllm.py --app qwen --model "Qwen/Qwen3-1.7B"
+    
+    echo "Step 5: Checking GPU resources in container (should show 25GB allocation)..."
+    POD_NAME=$(kubectl get pods -l app=qwen -o jsonpath='{.items[0].metadata.name}')
+    kubectl exec -it "$POD_NAME" -- nvidia-smi
+    
+    echo "Step 6: Checking GPU resources on host node..."
+    NODE_NAME=$(kubectl get pods -l app=qwen -o jsonpath='{.items[0].spec.nodeName}')
+    echo "Found qwen pod on node: $NODE_NAME"
     
     echo "=== Qwen Test Workflow Complete ==="
 }
@@ -41,15 +49,23 @@ test_mig() {
     echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
     POD_NAME=$(kubectl get pods -l app=mig -o jsonpath='{.items[0].metadata.name}')
     kubectl exec -it "$POD_NAME" -- nvidia-smi
+
+    echo "Step 3: Checking GPU resources on host node..."
+    NODE_NAME=$(kubectl get pods -l app=mig -o jsonpath='{.items[0].spec.nodeName}')
+    echo "Found mig pod on node: $NODE_NAME"
+    ssh "$NODE_NAME" nvidia-smi
     
-    echo "Step 2: Checking GPU resources in container (should show 25GB allocation)..."
+    echo "Step 3: Checking GPU resources in container (should show 25GB allocation)..."
     python3 ./scripts/gpu_visualization.py
 
-    echo "Step 3: Testing chat API with streaming output..."
+    echo "Step 4: Testing chat API with streaming output..."
     python3 ./scripts/test_vllm.py --app mig --model "Qwen/Qwen3-4B"
 
-    
-    echo "Step 4: Checking GPU resources on host node..."
+    echo "Step 5: Checking GPU resources in container (should show 25GB allocation)..."
+    POD_NAME=$(kubectl get pods -l app=mig -o jsonpath='{.items[0].metadata.name}')
+    kubectl exec -it "$POD_NAME" -- nvidia-smi
+
+    echo "Step 6: Checking GPU resources on host node..."
     NODE_NAME=$(kubectl get pods -l app=mig -o jsonpath='{.items[0].spec.nodeName}')
     echo "Found mig pod on node: $NODE_NAME"
     ssh "$NODE_NAME" nvidia-smi

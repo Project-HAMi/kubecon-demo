@@ -17,7 +17,7 @@ spec:
         nvidia.com/vgpu-mode: "mig"
     spec:
       containers:
-        - image: vllm/vllm-openai:latest
+        - image: vllm/vllm-openai:nightly-1f0d21064137f4fdc816864cf01832c26350be5a
           imagePullPolicy: IfNotPresent
           name: qwen3-4b-mig
           env:
