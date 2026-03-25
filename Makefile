@@ -41,11 +41,14 @@ test2: deploy-mig
 destroy-qwen:
 	@echo "helmfile -f helmfile.d/04-qwen.yaml destroy"
 	@helmfile -f helmfile.d/04-qwen.yaml destroy
+	@sleep 2
 	@./scripts/gpu_visualization.py
 
 destroy-mig:
 	@echo "helmfile -f helmfile.d/05-mig.yaml destroy"
 	@helmfile -f helmfile.d/05-mig.yaml destroy
+	@sleep 2
+	@./scripts/gpu_visualization.py
 
 destroy-cv-workload:
 	@echo "=== Destroying Computer Vision Workload ==="
