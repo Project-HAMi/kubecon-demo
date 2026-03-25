@@ -327,6 +327,31 @@ class SeabornGPUVisualizer:
 
         fig.update_xaxes(title_text="Node", tickangle=45)
 
+        # get full current file path and replace with QR code image path
+        qr_code_path = Path(__file__).parent / "../github-qr.png"
+
+        if qr_code_path.exists():
+            # Add QR code image below legend on the right
+            # Position: x=1.02 (right outside plot), y=0.3 (below legend)
+            # Size: 0.15 of paper width/height (adjust as needed)
+            fig.add_layout_image(
+                dict(
+                    source=f"file://{qr_code_path.resolve()}",
+                    xref="paper",
+                    yref="paper",
+                    x=1.02,  # Right outside plot area (same as default legend x)
+                    y=0.3,  # Position below legend (legend is around y=1.0)
+                    sizex=0.15,  # Size relative to paper width
+                    sizey=0.15,  # Size relative to paper height
+                    xanchor="left",  # Anchor to left side of image
+                    yanchor="middle",  # Anchor to middle of image
+                    opacity=1.0,
+                    layer="above",
+                )
+            )
+        else:
+            logger.warning(f"QR code not found at {qr_code_path}")
+
         output_path = output_dir / "interactive_dashboard.html"
         fig.write_html(str(output_path))
 
@@ -475,9 +500,7 @@ def main():
                 logger.info(f"{viz_type}: No data available")
 
         if not any(results.values()):
-            logger.info(
-                "No dashboard generated - check cluster status and permissions"
-            )
+            logger.info("No dashboard generated - check cluster status and permissions")
 
     except Exception as e:
         logger.error(f"Error generating dashboard: {e}")
