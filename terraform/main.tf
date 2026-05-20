@@ -85,6 +85,7 @@ resource "google_container_cluster" "primary" {
 }
 
 data "google_compute_instance_group" "gke_nodes" {
-  self_link = google_container_cluster.primary.node_pool[0].instance_group_urls[0]
+  # self_link = google_container_cluster.primary.node_pool[0].instance_group_urls[0]
+  zone = var.zone
+  name = "gke-kubecon-india-enviro-default-pool-7a3e2b4f-grp"
 }
-
