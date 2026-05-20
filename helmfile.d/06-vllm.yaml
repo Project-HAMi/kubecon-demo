@@ -1,0 +1,13 @@
+# helm repo add vllm https://vllm-project.github.io/production-stack
+# helm install vllm vllm/vllm-stack -f tutorials/assets/values-01-minimal-example.yaml
+
+repositories:
+  - name: vllm
+    url: https://vllm-project.github.io/production-stack
+
+releases:
+  - name: vllm
+    chart: vllm/vllm-stack
+    version: 0.1.0
+    values:
+      - values/values-01-minimal-example.yaml

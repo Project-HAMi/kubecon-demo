@@ -11,6 +11,10 @@ variable "project_id" {
 
 locals {
   ssh_key_files = fileset("${path.module}/../ssh-keys", "*.pub")
+  instance_group_name = element(
+    split("/", google_container_cluster.primary.node_pool[0].instance_group_urls[0]),
+    length(split("/", google_container_cluster.primary.node_pool[0].instance_group_urls[0])) - 1
+  )
   node_metadata = merge(
     {
       for f in local.ssh_key_files :
@@ -18,40 +22,41 @@ locals {
       # "ssh-keys-${trimsuffix(f, ".pub")}" => "hami_demo:${trimspace(file("${path.module}/../ssh-keys/${f}"))}"
     },
     {
-      "disable-legacy-endpoints" = true
+      "disable-legacy-endpoints" = true,
     }
   )
 }
 
 # resource "google_storage_bucket" "terraform_state" {
 #   name     = "demo-environments-hami"
+#   location = var.region
 # }
 
-# terraform {
-#   backend "gcs" {
-#     bucket = "demo-environments-hami"
-#     prefix = "kubecon-india"
-#   }
-#   required_providers {
-#     kubernetes = {
-#       source  = "hashicorp/kubernetes"
-#       version = "~> 2.0"
-#     }
-#   }
-# }
+terraform {
+  backend "gcs" {
+    bucket = "demo-environments-hami"
+    prefix = "kubecon-india"
+  }
+  required_providers {
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
+  }
+}
 
 data "google_client_config" "default" {}
 
 variable "region" {
   description = "The region in which to create the cluster."
   type        = string
-  default     = "asia-east1"
+  default     = "asia-northeast3"
 }
 
 variable "zone" {
   description = "The zone for the cluster nodes."
   type        = string
-  default     = "asia-northeast3-b"
+  default     = "b"
 }
 
 provider "google" {
@@ -61,7 +66,7 @@ provider "google" {
 
 resource "google_container_cluster" "primary" {
   name     = var.cluster_name
-  location = var.zone
+  location = "${var.region}-${var.zone}"
 
   initial_node_count = 3
   resource_labels    = {}
@@ -70,8 +75,10 @@ resource "google_container_cluster" "primary" {
   node_config {
     machine_type = "a2-highgpu-2g"
     image_type   = "UBUNTU_CONTAINERD"
+    # image_type   = "COS_CONTAINERD" r/o rootfs does not work with HAMi
     labels = {
       gpu = "on"
+      # "gke-no-default-nvidia-gpu-device-plugin" = "true"
     }
     guest_accelerator {
       type  = "nvidia-tesla-a100"
@@ -81,11 +88,5 @@ resource "google_container_cluster" "primary" {
     service_account = "default"
     metadata        = local.node_metadata
   }
-  # metadata_startup_script = "useradd -m -s /bin/bash 'admin'aaaaaaaa;echo 'admin:password@54w21@123@@' | chpasswd"
 }
 
-data "google_compute_instance_group" "gke_nodes" {
-  # self_link = google_container_cluster.primary.node_pool[0].instance_group_urls[0]
-  zone = var.zone
-  name = "gke-kubecon-india-enviro-default-pool-7a3e2b4f-grp"
-}
