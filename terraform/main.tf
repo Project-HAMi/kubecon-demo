@@ -84,8 +84,7 @@ resource "google_container_cluster" "primary" {
   # metadata_startup_script = "useradd -m -s /bin/bash 'admin'aaaaaaaa;echo 'admin:password@54w21@123@@' | chpasswd"
 }
 
-output "node_ip_addresses" {
-  description = "IP addresses of all GKE cluster nodes"
-  value       = google_container_cluster.primary.node_pool[0].instance_group_urls[0]
+data "google_compute_instance_group" "gke_nodes" {
+  self_link = google_container_cluster.primary.node_pool[0].instance_group_urls[0]
 }
 
