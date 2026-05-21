@@ -10,4 +10,4 @@ releases:
     chart: vllm/vllm-stack
     version: 0.1.0
     values:
-      - values/values-01-minimal-example.yaml
+      - ../values/values-01-minimal-example.yaml

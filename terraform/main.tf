@@ -77,12 +77,15 @@ resource "google_container_cluster" "primary" {
     image_type   = "UBUNTU_CONTAINERD"
     # image_type   = "COS_CONTAINERD" r/o rootfs does not work with HAMi
     labels = {
-      gpu = "on"
-      # "gke-no-default-nvidia-gpu-device-plugin" = "true"
+      gpu                                       = "on"
+      "gke-no-default-nvidia-gpu-device-plugin" = "true"
     }
     guest_accelerator {
       type  = "nvidia-tesla-a100"
       count = 2
+      gpu_driver_installation_config {
+        gpu_driver_version = "INSTALLATION_DISABLED"
+      }
     }
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
     service_account = "default"

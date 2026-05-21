@@ -3,10 +3,39 @@ repositories:
     url: https://project-hami.github.io/HAMi
 
 releases:
+  # kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/ubuntu/daemonset-preloaded.yaml
+  - name: nvidia-operator-quota
+    namespace: gpu-operator
+    chart: ../charts/nvidia-operator
+    wait: true
+    labels:
+      component: operator
+      tag: nvidia
+
+  - name: nvidia-operator
+    namespace: gpu-operator
+    chart: nvidia/gpu-operator
+    disableValidation: true
+    version: v26.3.1
+    # version: v25.3.0
+    needs:
+      - nvidia-operator-quota
+    wait: true
+    labels:
+      component: operator
+      tag: nvidia
+    values:
+      - hostPaths.driverInstallDir: /home/kubernetes/bin/nvidia
+        toolkit.installDir: /home/kubernetes/bin/nvidia
+        cdi.enabled: true
+        cdi.default: true
+
   - name: hami-core
     namespace: kube-system
     chart: hami-charts/hami
     version: "2.9.0"
+    needs:
+      - gpu-operator/nvidia-operator
     values:
       - scheduler:
           kubeScheduler:
