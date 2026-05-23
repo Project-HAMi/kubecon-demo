@@ -8,6 +8,8 @@ repositories:
 releases:
   - name: vllm
     chart: vllm/vllm-stack
+    namespace: vllm
+    createNamespace: true
     version: 0.1.0
     values:
-      - ../values/values-01-minimal-example.yaml
+      - ../values/hami-vllm.yaml

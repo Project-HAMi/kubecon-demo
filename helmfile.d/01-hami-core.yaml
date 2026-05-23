@@ -25,11 +25,32 @@ releases:
       component: operator
       tag: nvidia
     values:
-      - hostPaths.driverInstallDir: /home/kubernetes/bin/nvidia
-        toolkit.installDir: /home/kubernetes/bin/nvidia
-        cdi.enabled: true
-        cdi.default: true
-
+      - hostPaths:
+          driverInstallDir: /home/kubernetes/bin/nvidia
+      - toolkit:
+          installDir: /home/kubernetes/bin/nvidia
+      - cdi:
+          enabled: true
+          default: true
+      - dcgmExporter:
+          serviceMonitor:
+            enabled: true
+      - devicePlugin:
+          enabled: false
+          # enabled: true
+          env:
+          - name: DP_DISABLE_HEALTHCHECKS
+            value: "x"
+          - name: DEVICE_LIST_STRATEGY
+            value: "cdi-cri,cdi-annotations"
+      - toolkit:
+          env:
+          - name: ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED
+            value: "false"
+          - name: ACCEPT_NVIDIA_VISIBLE_DEVICES_AS_VOLUME_MOUNTS
+            value: "false"
+          - name: RUNTIME_CONFIG_SOURCE
+            value: "file"
   - name: hami-core
     namespace: kube-system
     chart: hami-charts/hami
