@@ -5,7 +5,7 @@ metadata:
   labels:
     app: qwen
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: qwen
@@ -20,7 +20,7 @@ spec:
       schedulerName: hami-scheduler
       containers:
         - name: vllm-qwen
-          image: vllm/vllm-openai:nightly-1f0d21064137f4fdc816864cf01832c26350be5a
+          image: docker.m.daocloud.io/vllm/vllm-openai:v0.23.0
           command:
             [
               "vllm",
@@ -31,11 +31,18 @@ spec:
               "--host",
               "0.0.0.0",
             ]
+          env:
+            - name: LIBCUDA_LOG_LEVEL
+              value: "2"
+            - name: GPU_CORE_UTILIZATION_POLICY
+              value: force
+            - name: VLLM_USE_MODELSCOPE
+              value: "True"
           resources:
             limits:
               nvidia.com/gpu: "1"
-              nvidia.com/gpucores: "30"
-              nvidia.com/gpumem: "25000"
+              nvidia.com/gpucores: "5"
+              nvidia.com/gpumem: "8000"
 ---
 apiVersion: v1
 kind: Service
