@@ -6,7 +6,7 @@ metadata:
     app: yolov8n
     chart: yolov8n
 spec:
-  replicas: 20
+  replicas: 6
   selector:
     matchLabels:
       app: yolov8n
@@ -18,7 +18,7 @@ spec:
       schedulerName: hami-scheduler
       containers:
         - name: ultralytics
-          image: ultralytics/ultralytics:latest
+          image: docker.m.daocloud.io/ultralytics/ultralytics:latest
           command:
             - python
             - -c

@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: qwen3-4b
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: qwen3-4b
