@@ -34,10 +34,10 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: "1"
-              nvidia.com/gpucores: "30"
-              nvidia.com/gpumem: "25600"
-      nodeSelector:
-        kubernetes.io/hostname: k8s-worker-2
+              nvidia.com/gpucores: "5"
+              nvidia.com/gpumem: "10000"
+      # nodeSelector:
+      #   kubernetes.io/hostname: k8s-worker-2
 ---
 apiVersion: v1
 kind: Service
