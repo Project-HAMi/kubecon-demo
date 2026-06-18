@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: qwen3-8b
+  name: qwen3-4b
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: qwen3-8b
+      app: qwen3-4b
   template:
     metadata:
       labels:
-        app: qwen3-8b
+        app: qwen3-4b
       annotations:
         hami.io/node-scheduler-policy: binpack
         hami.io/gpu-scheduler-policy: binpack
     spec:
       containers:
-        - name: qwen3-8b
+        - name: qwen3-4b
           image: docker.m.daocloud.io/vllm/vllm-openai:v0.23.0
           imagePullPolicy: IfNotPresent
           env:
@@ -29,7 +29,7 @@ spec:
           command:
             - vllm
             - serve
-            - Qwen/Qwen3-8B
+            - Qwen/Qwen3-4b
             - --dtype=auto
             - --max-model-len=1024
             - --enforce-eager
@@ -44,10 +44,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: qwen3-8b
+  name: qwen3-4b
 spec:
   selector:
-    app: qwen3-8b
+    app: qwen3-4b
   ports:
     - protocol: TCP
       port: 8020
