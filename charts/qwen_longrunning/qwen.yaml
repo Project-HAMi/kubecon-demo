@@ -17,13 +17,15 @@ spec:
     spec:
       containers:
         - name: qwen3-8b
-          image: vllm/vllm-openai:latest
+          image: docker.m.daocloud.io/vllm/vllm-openai:v0.23.0
           imagePullPolicy: IfNotPresent
           env:
             - name: LIBCUDA_LOG_LEVEL
               value: "2"
             - name: GPU_CORE_UTILIZATION_POLICY
               value: force
+            - name: VLLM_USE_MODELSCOPE
+              value: "True"
           command:
             - vllm
             - serve
