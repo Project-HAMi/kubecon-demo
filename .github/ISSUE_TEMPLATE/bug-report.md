@@ -21,7 +21,7 @@ labels: bug
 - Sanitized pod status, events, and GPU allocation output
 - Relevant `test_vllm.py` traceback or API response excerpt
 
-Before posting, include only relevant, time-bounded excerpts and remove or mask credentials, tokens, private keys, certificates, device identifiers, node or host names, workload identifiers, and internal image names.
+Before posting, include only relevant, time-bounded excerpts and remove or mask credentials, tokens, private keys, certificates, kubeconfig data, API endpoints, device identifiers, GPU UUIDs, node or host names, workload identifiers, and internal image names.
 
 **Environment**:
 - kubecon-demo version or commit:
